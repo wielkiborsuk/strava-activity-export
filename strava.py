@@ -16,10 +16,10 @@ def refresh_access_token(client_id, client_secret, refresh_token):
             "grant_type": "refresh_token",
         }
     )
-
+    
     if response.status_code != 200:
         raise Exception(f"Error refreshing Strava token: {response.text}")
-
+    
     return response.json()
 
 def get_access_token(client_id, client_secret, refresh_token, on_token_refresh=None):
@@ -28,11 +28,11 @@ def get_access_token(client_id, client_secret, refresh_token, on_token_refresh=N
     If a new refresh token is issued, the on_token_refresh callback is called.
     """
     token_data = refresh_access_token(client_id, client_secret, refresh_token)
-
+    
     new_refresh_token = token_data.get("refresh_token")
     if on_token_refresh and new_refresh_token and new_refresh_token != refresh_token:
         on_token_refresh(new_refresh_token)
-
+        
     return token_data["access_token"]
 
 def map_activity(activity):
@@ -63,22 +63,23 @@ def fetch_activities(access_token, per_page=30, page=1, after=None):
     }
     if after:
         params["after"] = int(after)
-
+    
     activities_url = "https://www.strava.com/api/v3/athlete/activities"
     response = requests.get(activities_url, headers=headers, params=params)
-
+    
     if response.status_code != 200:
         raise Exception(f"Strava API error: {response.text}")
-
+        
     return response.json()
 
-def fetch_last_week_activities(access_token):
+def fetch_recent_activities(access_token, days=7):
     """
-    Fetches activities from the last 7 days and maps them.
+    Fetches activities from the last X days and maps them.
     """
-    # Calculate epoch for 7 days ago
-    seven_days_ago = datetime.datetime.now() - datetime.timedelta(days=7)
-    after_timestamp = time.mktime(seven_days_ago.timetuple())
-
-    raw_activities = fetch_activities(access_token, after=after_timestamp)
+    # Calculate epoch for X days ago
+    start_date = datetime.datetime.now() - datetime.timedelta(days=days)
+    after_timestamp = time.mktime(start_date.timetuple())
+    
+    # We might need more per_page if many activities are expected
+    raw_activities = fetch_activities(access_token, after=after_timestamp, per_page=200)
     return [map_activity(a) for a in raw_activities]

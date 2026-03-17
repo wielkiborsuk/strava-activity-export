@@ -22,9 +22,15 @@ def extract_strava_activities(request):
             on_token_refresh=lambda new_token: config.update_secret("STRAVA_REFRESH_TOKEN", new_token)
         )
         
-        # 3. Fetch Last Week's Activities (Mapped)
-        print("Fetching activities from the last 7 days...")
-        activities = strava.fetch_last_week_activities(access_token)
+        # 3. Extract Request Parameters
+        try:
+            days = int(request.args.get("days", 7))
+        except ValueError:
+            days = 7
+        
+        # 4. Fetch Recent Activities (Mapped)
+        print(f"Fetching activities from the last {days} days...")
+        activities = strava.fetch_recent_activities(access_token, days=days)
         
         return (
             json.dumps(activities),
