@@ -4,6 +4,7 @@ import strava
 import config
 import spreadsheet
 
+
 @functions_framework.http
 def extract_strava_activities(request):
     """
@@ -13,7 +14,8 @@ def extract_strava_activities(request):
         # 1. Gather Secrets
         client_id = config.get_secret("STRAVA_CLIENT_ID")
         client_secret = config.get_secret("STRAVA_CLIENT_SECRET")
-        refresh_token = config.get_secret("STRAVA_REFRESH_TOKEN")
+        token_secret = request.args.get("token_secret_name", "STRAVA_REFRESH_TOKEN_MICHAL")
+        refresh_token = config.get_secret(token_secret)
 
         # Get Spreadsheet ID (can be in secret or passed in request)
         spreadsheet_id = config.get_secret("STRAVA_SPREADSHEET_ID")
@@ -24,7 +26,9 @@ def extract_strava_activities(request):
             client_id,
             client_secret,
             refresh_token,
-            on_token_refresh=lambda new_token: config.update_secret("STRAVA_REFRESH_TOKEN", new_token)
+            on_token_refresh=lambda new_token: config.update_secret(
+                "STRAVA_REFRESH_TOKEN", new_token
+            ),
         )
 
         # 3. Extract Request Parameters
@@ -38,26 +42,55 @@ def extract_strava_activities(request):
         activities = strava.fetch_recent_activities(access_token, days=days)
 
         # 5. Append to Spreadsheet (Ensuring unique IDs)
-        print(f"Appending activities to spreadsheet {spreadsheet_id} in sheet {sheet_name}...")
-        updated_rows = spreadsheet.append_activities(spreadsheet_id, activities, sheet_name=sheet_name)
+        print(
+            f"Appending activities to spreadsheet {spreadsheet_id} in sheet {sheet_name}..."
+        )
+
+        # Column definition for ordering and labels
+        column_definition = [
+            "id",
+            "start_date",
+            "type",
+            "name",
+            "distance",
+            "moving_time",
+            "elapsed_time",
+            "average_speed",
+            "max_speed",
+        ]
+        column_labels = {
+            "id": "ID",
+            "start_date": "Date",
+            "type": "Activity Type",
+            "name": "Activity Name",
+            "distance": "Distance (m)",
+            "moving_time": "Moving Time (s)",
+            "elapsed_time": "Elapsed Time (s)",
+            "average_speed": "Avg Speed (m/s)",
+            "max_speed": "Max Speed (m/s)",
+        }
+
+        updated_rows = spreadsheet.append_activities(
+            spreadsheet_id,
+            activities,
+            sheet_name=sheet_name,
+            column_definition=column_definition,
+            column_labels=column_labels,
+        )
 
         result = {
             "status": "success",
             "activities_fetched": len(activities),
             "new_activities_added": updated_rows,
-            "spreadsheet_id": spreadsheet_id
+            "spreadsheet_id": spreadsheet_id,
         }
 
-        return (
-            json.dumps(result),
-            200,
-            {"Content-Type": "application/json"}
-        )
+        return (json.dumps(result), 200, {"Content-Type": "application/json"})
 
     except Exception as e:
         print(f"Unhandled exception: {e}")
         return (
             json.dumps({"error": str(e)}),
             500,
-            {"Content-Type": "application/json"}
+            {"Content-Type": "application/json"},
         )
