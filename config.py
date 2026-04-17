@@ -1,56 +1,72 @@
 import os
-from google.cloud import secretmanager
+from firebase_admin import initialize_app, firestore
 from dotenv import load_dotenv
 
 # Load environment variables from .env file for local development
 load_dotenv()
 
-# Global variable to store Secret Manager client
-_secret_client = None
+# Global variable to store initialized Firebase app status
+_firebase_initialized = False
+_firestore_client = None
 
-def get_secret_client():
-    """Lazily initializes the Secret Manager client."""
-    global _secret_client
-    if _secret_client is None:
-        _secret_client = secretmanager.SecretManagerServiceClient()
-    return _secret_client
+def _get_firestore_client():
+    """Initializes Firebase Admin SDK and returns Firestore client."""
+    global _firebase_initialized, _firestore_client
+    if not _firebase_initialized:
+        try:
+            # Firestore client automatically uses GCP_PROJECT or ADC
+            initialize_app()
+        except ValueError:
+            # App already initialized
+            pass
+        _firebase_initialized = True
+    
+    if _firestore_client is None:
+        _firestore_client = firestore.client()
+    
+    return _firestore_client
 
 def get_secret(secret_id):
-    """Retrieves secret from environment variable (local) or Secret Manager (GCP)."""
+    """Retrieves config/secret from environment variable (local) or Firestore."""
     # Check local environment first
     local_secret = os.environ.get(secret_id)
     if local_secret:
         return local_secret
 
-    # Fallback to GCP Secret Manager
-    project_id = os.environ.get('GCP_PROJECT')
-    if not project_id:
-        raise ValueError(f"Secret {secret_id} not found in environment and GCP_PROJECT is not set.")
-    
-    name = f"projects/{project_id}/secrets/{secret_id}/versions/latest"
+    db = _get_firestore_client()
+
     try:
-        client = get_secret_client()
-        response = client.access_secret_version(request={"name": name})
-        return response.payload.data.decode("UTF-8")
+        # We store secrets in a 'config' collection, in a 'secrets' document
+        # This provides a flat key-value structure within that document
+        doc_ref = db.collection('config').document('secrets')
+        doc = doc_ref.get()
+        
+        if doc.exists:
+            data = doc.to_dict()
+            value = data.get(secret_id)
+            if value is not None:
+                return str(value)
+        
+        raise ValueError(f"Config {secret_id} not found in Firestore (config/secrets).")
     except Exception as e:
-        print(f"Error accessing secret {secret_id} in GCP: {e}")
+        print(f"Error accessing config {secret_id} in Firestore: {e}")
         raise
 
 def update_secret(secret_id, new_value):
-    """Updates a secret in Secret Manager (or logs to console locally)."""
+    """Updates a parameter in Firestore (or logs to console locally)."""
+    # Check if we are running locally
     project_id = os.environ.get('GCP_PROJECT')
-    
+
     if not project_id:
         print(f"Local development: new value for {secret_id} is provided. Update your .env file manually.")
         return
 
-    parent = f"projects/{project_id}/secrets/{secret_id}"
-    payload = new_value.encode("UTF-8")
-    client = get_secret_client()
+    db = _get_firestore_client()
+
     try:
-        client.add_secret_version(
-            request={"parent": parent, "payload": {"data": payload}}
-        )
-        print(f"Updated GCP Secret Manager secret: {secret_id}")
+        doc_ref = db.collection('config').document('secrets')
+        # Use merge=True to only update/add the specific secret_id field
+        doc_ref.set({secret_id: new_value}, merge=True)
+        print(f"Updated Firestore config: {secret_id}")
     except Exception as e:
-        print(f"Failed to update GCP secret {secret_id}: {e}")
+        print(f"Failed to update Firestore config {secret_id}: {e}")

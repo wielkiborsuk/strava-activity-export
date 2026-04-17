@@ -12,14 +12,14 @@ def extract_strava_activities(request):
     """
     try:
         # 1. Gather Secrets
-        client_id = config.get_secret("STRAVA_CLIENT_ID")
-        client_secret = config.get_secret("STRAVA_CLIENT_SECRET")
-        token_secret = request.args.get("token_secret_name", "STRAVA_REFRESH_TOKEN_MICHAL")
-        refresh_token = config.get_secret(token_secret)
+        user = request.args.get("user", "michal")
+        client_id = config.get_secret(f"STRAVA_CLIENT_ID_{user.upper()}")
+        client_secret = config.get_secret(f"STRAVA_CLIENT_SECRET_{user.upper()}")
+        refresh_token = config.get_secret(f"STRAVA_REFRESH_TOKEN_{user.upper()}")
 
         # Get Spreadsheet ID (can be in secret or passed in request)
         spreadsheet_id = config.get_secret("STRAVA_SPREADSHEET_ID")
-        sheet_name = request.args.get("sheet", "Sheet1")
+        sheet_name = user.capitalize()
 
         # 2. Get Access Token
         access_token = strava.get_access_token(
@@ -27,7 +27,7 @@ def extract_strava_activities(request):
             client_secret,
             refresh_token,
             on_token_refresh=lambda new_token: config.update_secret(
-                "STRAVA_REFRESH_TOKEN", new_token
+                f"STRAVA_REFRESH_TOKEN_{user.upper()}", new_token
             ),
         )
 

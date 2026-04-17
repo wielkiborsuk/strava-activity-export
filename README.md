@@ -21,14 +21,14 @@ This Cloud Function extracts activity information from the Strava API. It uses O
    - Copy the `refresh_token` from the response.
 
 ### 2. Google Cloud Platform Setup
-1. Enable the **Secret Manager API**.
-2. Create three secrets in Secret Manager:
+1. Enable **Cloud Firestore** in your GCP project (managed under "Databases" -> "Firestore" in the GCP Console).
+2. Create a collection named `config` and a document within it named `secrets`.
+3. Add your parameters as fields in the `secrets` document:
    - `STRAVA_CLIENT_ID`
    - `STRAVA_CLIENT_SECRET`
    - `STRAVA_REFRESH_TOKEN`
-3. Ensure the Cloud Function's service account has the following roles:
-   - `Secret Manager Secret Accessor` (to read secrets)
-   - `Secret Manager Secret Version Manager` (to update the refresh token when it changes)
+4. Ensure the Cloud Function's service account has the following roles:
+   - `Cloud Datastore User` (provides access to Firestore)
 
 ## Deployment
 
