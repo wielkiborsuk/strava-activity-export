@@ -1,0 +1,2 @@
+# Browser automation dependencies
+selenium>=4.16.0
