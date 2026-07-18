@@ -81,7 +81,7 @@ class StravaBrowser:
                     self.logger.info("Email entered")
                 else:
                     self.logger.error("Email field not found")
-                    return False
+                    continue
 
                 # Find and input password
                 # password_field = self.get_element(By.ID, "password")
@@ -104,7 +104,7 @@ class StravaBrowser:
                     time.sleep(5)
                 except TimeoutException:
                     self.logger.error("Submit button not clickable after waiting")
-                    return False
+                    continue
 
                 # Wait for redirect
                 time.sleep(3)
@@ -186,7 +186,7 @@ class StravaBrowser:
             self.logger.info("Verifying success message")
 
             # Expected success message
-            success_text = "Archive request submitted successfully"
+            success_text = "Request received"
 
             # Wait for success message
             success = self.browser.verify_success_message(success_text)
