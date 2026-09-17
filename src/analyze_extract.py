@@ -6,76 +6,61 @@ This script performs the following workflow:
 1. Find archive/extract email from Gmail
 2. Download the archive based on URL provided in email
 3. Extract archive contents to tmp_extract directory
+4. Load activities into structured format
 
 Usage as module:
     from analyze_extract import run_analyze_extract
-    success = run_analyze_extract(
-        email="your@email.com",
-        mode="debug",
-        headless=True
-    )
+    activities = run_analyze_extract()
 """
 
+from pathlib import Path
 import sys
 import tarfile
 import zipfile
 import locale
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 import csv
 from datetime import datetime
 import requests
+import tempfile
 
 from google.gmail import GmailChecker
 
 
-def find_archive_email(
-    max_results: int = 5,
-    sender: str = "no-reply@strava.com"
-) -> Optional[dict]:
-    """
-    Find archive/extract email from Gmail.
+class ArchiveDownloadError(Exception):
+    """Exception raised when archive download fails."""
+    def __init__(self, message: str, url: str = ""):
+        self.message = message
+        self.url = url
+        super().__init__(self.message)
 
-    Args:
-        max_results: Maximum number of results to search
-        sender: Email sender to filter by
 
-    Returns:
-        Dictionary with email details, or None if not found
-    """
-    try:
-        print("\n[Step 1] Finding archive email")
+class ArchiveExtractionError(Exception):
+    """Exception raised when archive extraction fails."""
+    def __init__(self, message: str, archive_path: str = ""):
+        self.message = message
+        self.archive_path = archive_path
+        super().__init__(self.message)
 
-        # Initialize Gmail checker
 
-        # Search for Strava code emails
-        results = checker.search_emails(
-            sender=sender,
-            max_results=max_results
-        )
+class ActivitiesLoadingError(Exception):
+    """Exception raised when loading activities fails."""
+    def __init__(self, message: str, extract_dir: str = ""):
+        self.message = message
+        self.extract_dir = extract_dir
+        super().__init__(self.message)
 
-        if not results:
-            print("[Info] No archive emails found")
-            return None
 
-        # Find email with archive/download link
-        for result in results:
-            body = result.get('body', '')
-            if 'archive' in body.lower() or 'download' in body.lower():
-                print(f"[Info] Found archive email: {result.get('subject', '')}")
-                return result
-
-        print("[Info] No archive email found with archive/download keywords")
-        return None
-
-    except Exception as e:
-        print(f"[Error] Finding archive email failed: {e}")
-        return None
-
+class ArchiveEmailNotFoundError(Exception):
+    """Exception raised when archive email is not found."""
+    def __init__(self, message: str = "No archive email found"):
+        self.message = message
+        super().__init__(self.message)
 
 def download_archive(
     url: str,
     output_path: str = "archive.zip"
-) -> bool:
+):
     """
     Download archive from URL.
 
@@ -83,8 +68,8 @@ def download_archive(
         url: Archive download URL
         output_path: Path to save downloaded archive
 
-    Returns:
-        True if download successful, False otherwise
+    Raises:
+        ArchiveDownloadError: If download fails
     """
     try:
         print(f"\n[Step 2] Downloading archive from {url}")
@@ -104,17 +89,19 @@ def download_archive(
                     f.write(chunk)
 
         print(f"[Success] Archive downloaded to {output_path}")
-        return True
 
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Download failed for URL: {url}"
+        raise ArchiveDownloadError(error_msg, url) from e
     except Exception as e:
-        print(f"[Error] Download failed: {e}")
-        return False
+        error_msg = f"Download failed: {e}"
+        raise ArchiveDownloadError(error_msg, url) from e
 
 
 def extract_archive(
     archive_path: str,
     extract_dir: str = "tmp_extract"
-) -> bool:
+):
     """
     Extract archive to specified directory.
 
@@ -122,8 +109,8 @@ def extract_archive(
         archive_path: Path to archive file
         extract_dir: Directory to extract contents to
 
-    Returns:
-        True if extraction successful, False otherwise
+    Raises:
+        ArchiveExtractionError: If extraction fails
     """
     try:
         print(f"\n[Step 3] Extracting archive to {extract_dir}")
@@ -134,8 +121,9 @@ def extract_archive(
 
         # Check if archive exists
         if not Path(archive_path).exists():
-            print(f"[Error] Archive not found: {archive_path}")
-            return False
+            error_msg = f"Archive not found: {archive_path}"
+            print(f"[Error] {error_msg}")
+            raise ArchiveExtractionError(error_msg, archive_path)
 
         # Determine archive type
         archive_ext = Path(archive_path).suffix.lower()
@@ -153,18 +141,17 @@ def extract_archive(
             print(f"[Success] Extracted to {extract_path}")
 
         else:
-            print(f"[Error] Unsupported archive format: {archive_ext}")
-            return False
+            error_msg = f"Unsupported archive format: {archive_ext}"
+            print(f"[Error] {error_msg}")
+            raise ArchiveExtractionError(error_msg, archive_path)
 
         # List extracted contents
         contents = list(extract_path.iterdir())
         print(f"[Info] Extracted {len(contents)} files/directories")
 
-        return True
-
     except Exception as e:
-        print(f"[Error] Extraction failed: {e}")
-        return False
+        error_msg = f"Extraction failed: {e}"
+        raise ArchiveExtractionError(error_msg, archive_path) from e
 
 
 def load_activities(extract_dir: str = "tmp_extract") -> list[Dict[str, Any]]:
@@ -176,6 +163,9 @@ def load_activities(extract_dir: str = "tmp_extract") -> list[Dict[str, Any]]:
 
     Returns:
         List of activity dictionaries with required fields
+
+    Raises:
+        ActivitiesLoadingError: If loading activities fails
     """
     try:
         print(f"\n[Step 4] Loading activities from {extract_dir}")
@@ -183,8 +173,9 @@ def load_activities(extract_dir: str = "tmp_extract") -> list[Dict[str, Any]]:
         activities_csv = Path(extract_dir) / "activities.csv"
 
         if not activities_csv.exists():
-            print(f"[Error] Activities CSV not found: {activities_csv}")
-            return []
+            error_msg = f"Activities CSV not found: {activities_csv}"
+            print(f"[Error] {error_msg}")
+            raise ActivitiesLoadingError(error_msg, extract_dir)
 
         # Read CSV with proper encoding
         activities = []
@@ -214,60 +205,75 @@ def load_activities(extract_dir: str = "tmp_extract") -> list[Dict[str, Any]]:
         return activities
 
     except Exception as e:
-        print(f"[Error] Loading activities failed: {e}")
-        return []
+        error_msg = f"Loading activities failed: {e}"
+        raise ActivitiesLoadingError(error_msg, extract_dir) from e
 
 
-def run_analyze_extract() -> bool:
+def run_analyze_extract():
     """
     Run the Strava archive analysis workflow.
 
     Returns:
-        True if workflow completed successfully, False otherwise
+        List of activity dictionaries with required fields
+
+    Raises:
+        ArchiveEmailNotFoundError: If no archive email is found
+        ArchiveDownloadError: If download fails
+        ArchiveExtractionError: If extraction fails
+        ActivitiesLoadingError: If loading activities fails
     """
     print("=" * 60)
     print("Strava Archive Analysis - Extract and Analyze")
     print("=" * 60)
 
-    # Step 1: Find archive email
-    checker = GmailChecker(credentials_file="credentials.yaml")
-    archive_email = checker.search_strava_export_emails()[0]
+    # Use temporary directory for archive and extracted files
+    try:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Step 1: Find archive email
+            checker = GmailChecker(credentials_file="credentials.yaml")
+            archive_email = checker.search_strava_export_emails()[0]
 
-    if not archive_email:
-        print("\n[Error] No archive email found")
-        return False
+            if not archive_email:
+                error_msg = "No archive email found"
+                print("\n[Error] " + error_msg)
+                raise ArchiveEmailNotFoundError(error_msg)
 
-    download_url = archive_email["download_url"]
-    print(f"[Info] Download URL: {download_url}")
+            download_url = archive_email["download_url"]
+            print(f"[Info] Download URL: {download_url}")
 
-    # Step 2: Download archive
-    archive_path = "strava_archive.zip"
-    download_success = download_archive(download_url, archive_path)
+            # Step 2: Download archive
+            archive_path = Path(tmp_dir) / "strava_archive.zip"
+            download_archive(download_url, str(archive_path))
 
-    if not download_success:
-        print("\n[Error] Archive download failed")
-        return False
+            # Step 3: Extract archive
+            extract_dir = Path(tmp_dir) / "tmp_extract"
+            extract_archive(str(archive_path), str(extract_dir))
 
-    # Step 3: Extract archive
-    extract_success = extract_archive(archive_path, "tmp_extract")
+            # Step 4: Load activities - must be done before cleanup
+            activities = load_activities(str(extract_dir))
 
-    # Step 4: Load activities
-    activities = load_activities("tmp_extract")
+            # Output results
+            print("\n" + "=" * 60)
+            print("[Success] Archive analysis workflow completed")
+            print(f"Extracted to: {extract_dir}")
+            print("=" * 60)
+            print(activities[:10])
 
-    # Output results
-    print("\n" + "=" * 60)
-    if archive_email and download_success and extract_success:
-        print("[Success] Archive analysis workflow completed")
-        print(f"Extracted to: {Path('tmp_extract').absolute()}")
-    else:
-        print("[Error] Archive analysis workflow failed")
-    print("=" * 60)
-    print(activities[:10])
+            return activities
 
-    return archive_email and download_success and extract_success and activities
+    except Exception as e:
+        print(f"\n[Error] Workflow failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 
 if __name__ == "__main__":
-    success = run_analyze_extract()
-
-    sys.exit(0 if success else 1)
+    try:
+        activities = run_analyze_extract()
+        sys.exit(0 if activities else 1)
+    except Exception as e:
+        print(f"\n[Error] Main execution failed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
