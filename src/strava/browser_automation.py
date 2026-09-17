@@ -11,6 +11,37 @@ import sys
 from pathlib import Path
 
 
+class BrowserAutomationError(Exception):
+    """Base exception for browser automation errors."""
+    pass
+
+
+class ElementNotFoundError(BrowserAutomationError):
+    """Raised when element is not found."""
+    def __init__(self, by: str, value: str):
+        self.by = by
+        self.value = value
+        super().__init__(f"Element not found: {by}={value}")
+
+
+class VerificationError(BrowserAutomationError):
+    """Raised when verification fails."""
+    def __init__(self, message: str):
+        super().__init__(f"Verification failed: {message}")
+
+
+class CookieConsentError(BrowserAutomationError):
+    """Raised when cookie consent cannot be dismissed."""
+    def __init__(self):
+        super().__init__("Failed to dismiss cookie consent modal")
+
+
+class LoginError(BrowserAutomationError):
+    """Raised when login process fails."""
+    def __init__(self, message: str):
+        super().__init__(f"Login failed: {message}")
+
+
 class BrowserAutomation:
     """Core browser automation module for Strava archive requests."""
 
@@ -145,6 +176,10 @@ class BrowserAutomation:
 
         Returns:
             True if clicked successfully, False otherwise
+
+        Raises:
+            ElementNotFoundError: If element not found
+            VerificationError: If element cannot be clicked
         """
         try:
             element = self.get_element(by, value, timeout)
@@ -155,6 +190,8 @@ class BrowserAutomation:
                 return True
             return False
 
+        except ElementNotFoundError:
+            raise
         except Exception as e:
             self.logger.error(f"Error clicking element: {e}")
             return False
@@ -169,6 +206,9 @@ class BrowserAutomation:
 
         Returns:
             True if success message found, False otherwise
+
+        Raises:
+            VerificationError: If success message not found
         """
         try:
             if timeout is None:
@@ -181,7 +221,9 @@ class BrowserAutomation:
 
         except TimeoutException:
             self.logger.warning(f"Success message not found: {success_text}")
-            return False
+            raise VerificationError(f"Success message '{success_text}' not found")
+        except VerificationError:
+            raise
         except Exception as e:
             self.logger.error(f"Error verifying success message: {e}")
             return False
@@ -192,14 +234,19 @@ class BrowserAutomation:
 
         Returns:
             Success status
+
+        Raises:
+            BrowserAutomationError: If browser initialization fails
         """
         try:
             self.driver = self.initialize_browser()
             return True
 
+        except BrowserAutomationError:
+            raise
         except Exception as e:
             self.logger.error(f"Browser automation failed: {e}")
-            return False
+            raise BrowserAutomationError(f"Browser automation failed: {e}")
 
     def __enter__(self):
         """Context manager entry."""

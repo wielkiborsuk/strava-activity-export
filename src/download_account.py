@@ -31,6 +31,12 @@ from strava.browser_automation import BrowserAutomation
 from strava.strava_browser import StravaBrowser
 
 from google.gmail import GmailChecker
+from strava.browser_automation import (
+    BrowserAutomationError,
+    ElementNotFoundError,
+    VerificationError,
+    LoginError
+)
 
 logger = get_logger(__name__)
 
@@ -110,38 +116,40 @@ def run_archive_request(
             # Run archive request workflow
             log_info("\n[Workflow]")
             log_info("\n[Step 1] Login to Strava")
-            login_initiated = strava_browser.initiate_login(email)
-            if not login_initiated:
-                log_error("Login failed")
+            try:
+                strava_browser.initiate_login(email)
+            except (LoginError, ElementNotFoundError) as e:
+                log_error(f"Login failed: {e}")
                 return False
 
             otp_code = checker.search_strava_code_emails()[0]['code']
 
-            login_success = strava_browser.finalize_login(otp_code)
-
-            if not login_success:
-                log_error("Login failed")
+            try:
+                strava_browser.finalize_login(otp_code)
+            except LoginError as e:
+                log_error(f"Login failed: {e}")
                 return False
 
             log_info("\n[Step 2] Request archive extraction")
-            extract_success = strava_browser.request_extract()
+            try:
+                strava_browser.request_extract()
+            except VerificationError as e:
+                log_error(f"Archive request extraction failed: {e}")
+                return False
 
             # Output results
             log_info("\n" + "=" * 60)
-            if login_success and extract_success:
-                log_success("Archive request workflow completed")
-                log_info("The archive download should be available via email soon")
-            else:
-                log_error("Archive request workflow failed")
+            log_success("Archive request workflow completed")
+            log_info("The archive download should be available via email soon")
             log_info("=" * 60)
 
-            return login_success and extract_success
+            return True
 
     except KeyboardInterrupt:
         log_info("\n\n[Interrupted] Workflow cancelled by user")
         return False
-    except Exception as e:
-        log_error(f"\n[Error] Workflow failed: {e}")
+    except BrowserAutomationError as e:
+        log_error(f"\n[Error] Browser automation failed: {e}")
         import traceback
         traceback.print_exc()
         return False

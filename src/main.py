@@ -6,6 +6,12 @@ from strava.strava_browser import StravaBrowser
 
 from google.spreadsheet import append_activities
 from src.logging_config import get_logger, log_info, log_error
+from strava.browser_automation import (
+    BrowserAutomationError,
+    VerificationError,
+    ElementNotFoundError,
+    LoginError
+)
 
 logger = get_logger(__name__)
 
@@ -69,6 +75,13 @@ def extract_strava_activities(request):
 
         return (json.dumps(result), 200, {"Content-Type": "application/json"})
 
+    except (BrowserAutomationError, VerificationError, ElementNotFoundError, LoginError) as e:
+        log_error(f"Browser automation failed: {e}")
+        return (
+            json.dumps({"error": str(e)}),
+            500,
+            {"Content-Type": "application/json"},
+        )
     except Exception as e:
         log_error(f"Unhandled exception: {e}")
         return (
