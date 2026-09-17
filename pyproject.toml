@@ -1,0 +1,46 @@
+[project]
+name = "strava-reports"
+version = "1.0.0"
+description = "Strava activity extraction and reporting tool"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+
+dependencies = [
+    "functions-framework>=3.10.0",
+    "requests>=2.33.1",
+    "firebase-admin>=7.4.0",
+    "python-dotenv>=1.2.2",
+    "google-api-python-client>=2.194.0",
+    "google-auth>=2.49.2",
+    "google-auth-oauthlib>=1.3.1",
+    "selenium>=4.16.0",
+    "pyyaml>=6.0.3",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

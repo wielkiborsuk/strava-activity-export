@@ -1,8 +1,9 @@
 import json
 import functions_framework
-import strava
-import config
-import spreadsheet
+from strava.browser_automation import BrowserAutomation
+from strava.strava_browser import StravaBrowser
+from config import get_secret
+from google.spreadsheet import append_activities
 
 
 @functions_framework.http
@@ -13,33 +14,12 @@ def extract_strava_activities(request):
     try:
         # 1. Gather Secrets
         user = request.args.get("user", "michal")
-        client_id = config.get_secret(f"STRAVA_CLIENT_ID_{user.upper()}")
-        client_secret = config.get_secret(f"STRAVA_CLIENT_SECRET_{user.upper()}")
-        refresh_token = config.get_secret(f"STRAVA_REFRESH_TOKEN_{user.upper()}")
 
         # Get Spreadsheet ID (can be in secret or passed in request)
-        spreadsheet_id = config.get_secret("STRAVA_SPREADSHEET_ID")
+        spreadsheet_id = get_secret("STRAVA_SPREADSHEET_ID")
         sheet_name = user.capitalize()
 
-        # 2. Get Access Token
-        access_token = strava.get_access_token(
-            client_id,
-            client_secret,
-            refresh_token,
-            on_token_refresh=lambda new_token: config.update_secret(
-                f"STRAVA_REFRESH_TOKEN_{user.upper()}", new_token
-            ),
-        )
-
-        # 3. Extract Request Parameters
-        try:
-            days = int(request.args.get("days", 7))
-        except ValueError:
-            days = 7
-
-        # 4. Fetch Recent Activities (Mapped)
-        print(f"Fetching activities from the last {days} days...")
-        activities = strava.fetch_recent_activities(access_token, days=days)
+        activities = []
 
         # 5. Append to Spreadsheet (Ensuring unique IDs)
         print(
@@ -70,7 +50,7 @@ def extract_strava_activities(request):
             "max_speed": "Max Speed (m/s)",
         }
 
-        updated_rows = spreadsheet.append_activities(
+        updated_rows = append_activities(
             spreadsheet_id,
             activities,
             sheet_name=sheet_name,

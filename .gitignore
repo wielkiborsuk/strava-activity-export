@@ -3,3 +3,14 @@
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints
+*.egg-info/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+browser_automation.log
+dist/
+build/
+*.whl
+credentials.yaml

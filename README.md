@@ -18,9 +18,9 @@ For data extraction when the API is unavailable, you can use the browser automat
    - macOS: `brew install geckodriver`
    - Windows: Download from https://github.com/mozilla/geckodriver/releases
 
-3. Install Python dependencies
+3. Install Python dependencies using uv
    ```bash
-   uv pip install -r browser_requirements.txt
+   uv sync
    ```
 
 ### Setup
@@ -61,7 +61,7 @@ python download_account.py --mode=production
 python download_account.py --mode=debug --pause=15 --verbose=true
 ```
 
-### 1. Browser Automation Setup
+### Browser Automation Setup
 1. Install Firefox browser
    - Ubuntu/Debian: `sudo apt-get install firefox`
    - macOS: `brew install firefox`
@@ -74,7 +74,7 @@ python download_account.py --mode=debug --pause=15 --verbose=true
 
 3. Install Python dependencies
    ```bash
-   uv pip install -r browser_requirements.txt
+   uv sync --extra browser
    ```
 
 ### 2. Strava API Setup
