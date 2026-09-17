@@ -5,6 +5,9 @@ from strava.browser_automation import BrowserAutomation
 from strava.strava_browser import StravaBrowser
 
 from google.spreadsheet import append_activities
+from src.logging_config import get_logger, log_info, log_error
+
+logger = get_logger(__name__)
 
 
 @functions_framework.http
@@ -23,9 +26,7 @@ def extract_strava_activities(request):
         activities = []
 
         # 5. Append to Spreadsheet (Ensuring unique IDs)
-        print(
-            f"Appending activities to spreadsheet {spreadsheet_id} in sheet {sheet_name}..."
-        )
+        log_info(f"Appending activities to spreadsheet {spreadsheet_id} in sheet {sheet_name}...")
 
         # Column definition for ordering and labels
         column_definition = [
@@ -69,7 +70,7 @@ def extract_strava_activities(request):
         return (json.dumps(result), 200, {"Content-Type": "application/json"})
 
     except Exception as e:
-        print(f"Unhandled exception: {e}")
+        log_error(f"Unhandled exception: {e}")
         return (
             json.dumps({"error": str(e)}),
             500,

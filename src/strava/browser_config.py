@@ -2,6 +2,9 @@ import os
 import dotenv
 from pathlib import Path
 from typing import Dict, Any, Optional
+from src.logging_config import get_logger, log_info
+
+logger = get_logger(__name__)
 
 
 class BrowserConfig:
@@ -38,7 +41,7 @@ class BrowserConfig:
         # Load dotenv file
         loaded = dotenv.load_dotenv(dotenv_path=dotenv_path)
         if loaded:
-            print(f"Loaded .env file from: {dotenv_path}")
+            log_info(f"Loaded .env file from: {dotenv_path}")
 
         if config is None:
             config = {}

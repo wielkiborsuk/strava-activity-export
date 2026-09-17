@@ -1,13 +1,14 @@
 import base64
 import re
 import os
-import logging
-from email.message import EmailMessage
-from typing import List, Dict, Optional, Tuple
-from email.policy import default as email_policy
+from typing import List, Dict, Optional
 from googleapiclient.discovery import build
 import requests
 import yaml
+
+from src.logging_config import get_logger, log_info, log_error
+
+logger = get_logger(__name__)
 
 try:
     from google.oauth2.credentials import Credentials
@@ -17,12 +18,7 @@ except ImportError:
     except ImportError:
         from google.oauth2.credentials import Credentials
 
-from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Strava email patterns
 STRAVA_SENDER = 'no-reply@strava.com'
@@ -260,17 +256,9 @@ class GmailChecker:
                 logger.debug(f"Message {message_id} is not a one-time code email")
                 return None
 
-            message_data = self._get_message(message_id)
-            body_data = message_data.get('payload', {}).get('parts', {})[0].get('body', {}).get('data', '')
+            body = self._get_message_body(message_id)
 
-            if not body_data:
-                logger.warning(f"No body found in message {message_id}")
-                return None
-
-            try:
-                body = base64.urlsafe_b64decode(body_data).decode('utf-8')
-            except Exception as e:
-                logger.warning(f"Failed to decode message body: {e}")
+            if not body:
                 return None
 
             code = self._extract_one_time_code(body)
@@ -317,17 +305,9 @@ class GmailChecker:
                 logger.debug(f"Message {message_id} is not a data export email")
                 return None
 
-            message_data = self._get_message(message_id)
-            body_data = message_data.get('payload', {}).get('parts', [{}])[0].get('body', {}).get('data', '')
+            body = self._get_message_body(message_id)
 
-            if not body_data:
-                logger.warning(f"No body found in message {message_id}")
-                return None
-
-            try:
-                body = base64.urlsafe_b64decode(body_data).decode('utf-8')
-            except Exception as e:
-                logger.warning(f"Failed to decode message body: {e}")
+            if not body:
                 return None
 
             download_url = self._find_download_url(body)
@@ -460,6 +440,34 @@ class GmailChecker:
         except Exception as e:
             raise MessageNotFoundError(f"Failed to get message data {message_id}: {e}")
 
+    def _get_message_body(self, message_id: str) -> Optional[str]:
+        """
+        Get and decode message body from Gmail message.
+
+        Args:
+            message_id: Gmail message ID
+
+        Returns:
+            Decoded message body text or None if failed
+        """
+        try:
+            message_data = self._get_message(message_id)
+            body_data = message_data.get('payload', {}).get('parts', [{}])[0].get('body', {}).get('data', '')
+
+            if not body_data:
+                logger.warning(f"No body found in message {message_id}")
+                return None
+
+            try:
+                body = base64.urlsafe_b64decode(body_data).decode('utf-8')
+                return body
+            except Exception as e:
+                logger.warning(f"Failed to decode message body: {e}")
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get message data {message_id}: {e}")
+            return None
+
     @staticmethod
     def _extract_one_time_code(body: str) -> Optional[str]:
         """
@@ -570,11 +578,6 @@ class AuthenticationError(Exception):
     pass
 
 
-class TokenExpiredError(Exception):
-    """Raised when token refresh fails."""
-    pass
-
-
 class SearchError(Exception):
     """Raised when search operation fails."""
     pass
@@ -590,13 +593,6 @@ if __name__ == "__main__":
     dotenv.load_dotenv()
 
     ch = GmailChecker(credentials_file="credentials.yaml")
-    # mails = ch.search_emails(query="from:no-reply@strava.com")
-    # print(mails)
-    # m = ch._get_message(mails[0]['id'])
-    # print(m)
     m = ch.search_strava_code_emails()
-    print(m[0]['code'])
-
-    # m = ch.search_strava_export_emails()
-    # print(m[0]['download_url'])
+    log_info(f"Extracted code: {m[0]['code']}")
 
