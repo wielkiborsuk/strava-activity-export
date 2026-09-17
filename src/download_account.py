@@ -103,7 +103,7 @@ def run_archive_request(
 
     print(f"\nEmail: {email}")
 
-    checker = GmailChecker()
+    checker = GmailChecker(credentials_file="credentials.yaml")
 
     # Initialize browser automation
     print("\n[Initialization]")

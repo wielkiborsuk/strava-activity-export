@@ -1,11 +1,12 @@
 import base64
 import re
-import time
+import os
 import logging
 from email.message import EmailMessage
 from typing import List, Dict, Optional, Tuple
 from email.policy import default as email_policy
 import requests
+import yaml
 
 try:
     from google.oauth2.credentials import Credentials
@@ -30,24 +31,30 @@ STRAVA_EXPORT_SUBJECT = 'Twoje archiwum Strava jest gotowe do pobrania'
 class GmailChecker:
     """Main class for Gmail operations"""
 
-    def __init__(self, email_address: str = None, access_token: str = None):
+    def __init__(
+        self,
+        credentials_file: str
+    ):
         """
         Initialize Gmail client with credentials.
 
         Args:
-            email_address: Gmail address (from env or provided)
-            access_token: OAuth2 access token (from env or provided)
+            email_address: Gmail address (required)
+            access_token: OAuth2 access token (required)
+            refresh_token: OAuth2 refresh token (required)
+            credentials_file: Path to credentials YAML file for persistence
         """
-        self.email_address = email_address
-        self.access_token = access_token
         self.service = None
         self.credentials = None
+        self.credentials_file = credentials_file
 
-        # Load credentials from environment if not provided
-        if not email_address:
-            self.email_address = self._get_env_value('GMAIL_EMAIL_ADDRESS')
-        if not access_token:
-            self.access_token = self._get_env_value('GMAIL_ACCESS_TOKEN')
+        # Load credentials from file if provided
+        credentials_data = self._load_credentials_from_file()
+        if credentials_data:
+            self.email_address = credentials_data.get('email')
+            self.access_token = credentials_data.get('token')
+            self.refresh_token = credentials_data.get('refresh_token')
+            self.credentials_file = credentials_file
 
         if not self.email_address or not self.access_token:
             raise CredentialError("Missing Gmail credentials")
@@ -76,6 +83,29 @@ class GmailChecker:
             logger.warning(f"Failed to get env value {key} from config: {e}")
             return local_value
 
+    def _get_client_credentials_from_file(self) -> Dict:
+        """
+        Get client credentials from credentials file.
+
+        Returns:
+            Dictionary with client_id, client_secret, and token_uri
+        """
+        try:
+            if not self.credentials_file or not os.path.exists(self.credentials_file):
+                return {}
+
+            with open(self.credentials_file, 'r') as f:
+                credentials_data = yaml.safe_load(f)
+
+            return {
+                'client_id': credentials_data.get('client_id'),
+                'client_secret': credentials_data.get('client_secret'),
+                'token_uri': credentials_data.get('token_uri')
+            }
+        except Exception as e:
+            logger.warning(f"Failed to load client credentials from file: {e}")
+            return {}
+
     def _initialize_service(self):
         """Initialize Gmail API service."""
         try:
@@ -96,21 +126,88 @@ class GmailChecker:
             Valid OAuth2 credentials
         """
         try:
-            # Try to use provided access token
-            credentials = Credentials(token=self.access_token)
+            # Load credentials from file first
+            credentials_data = self._load_credentials_from_file()
 
-            # Check if token is expired and refresh if needed
-            if credentials.expired and credentials.refresh_token:
-                credentials.refresh(Request())
+            # Get client credentials from file
+            client_id = credentials_data.get('client_id')
+            client_secret = credentials_data.get('client_secret')
+            token_uri = credentials_data.get('token_uri') or 'https://oauth2.googleapis.com/token'
 
-                # Update access token if refreshed
-                if credentials.token != self.access_token:
-                    logger.info("Gmail token refreshed successfully")
-                    self.access_token = credentials.token
+            # Try to use provided access tokens with refresh token
+            if self.refresh_token:
+                credentials = Credentials(
+                    token=self.access_token,
+                    refresh_token=self.refresh_token,
+                    client_id=client_id,
+                    client_secret=client_secret,
+                    token_uri=token_uri
+                )
+
+                # Check if token is expired and refresh if needed
+                if credentials.expired and credentials.refresh_token:
+                    logger.info("Access token expired, refreshing...")
+                    credentials.refresh(Request())
+
+                    # Save refreshed credentials if file path provided
+                    if self.credentials_file:
+                        self._save_credentials(credentials)
+
+                    # Update access token if refreshed
+                    if credentials.token != self.access_token:
+                        logger.info("Gmail token refreshed successfully")
+                        self.access_token = credentials.token
+            else:
+                credentials = Credentials(token=self.access_token)
 
             return credentials
         except Exception as e:
             raise AuthenticationError(f"Failed to get credentials: {e}")
+
+    def _save_credentials(self, credentials: Credentials):
+        """
+        Save credentials to a YAML file for persistence.
+
+        Args:
+            credentials: Credentials object to save
+        """
+        try:
+            credentials_data = {
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes,
+                'expiry': credentials.expiry.isoformat() if credentials.expiry else None
+            }
+
+            # Save to file
+            with open(self.credentials_file, 'w') as f:
+                yaml.dump(credentials_data, f, default_flow_style=False)
+
+            logger.info(f"Credentials saved to {self.credentials_file}")
+        except Exception as e:
+            logger.warning(f"Failed to save credentials: {e}")
+
+    def _load_credentials_from_file(self) -> Optional[Dict]:
+        """
+        Load credentials from YAML file.
+
+        Returns:
+            Credentials dict or None if file doesn't exist
+        """
+        try:
+            if not self.credentials_file or not os.path.exists(self.credentials_file):
+                return None
+
+            with open(self.credentials_file, 'r') as f:
+                credentials_data = yaml.safe_load(f)
+
+            return credentials_data
+        except Exception as e:
+            logger.warning(f"Failed to load credentials from file: {e}")
+            return None
 
     def search_emails(
         self,
@@ -347,30 +444,6 @@ class GmailChecker:
             logger.error(f"Failed to search Strava export emails: {e}")
             return []
 
-    def delete_email(self, message_id: str, dry_run: bool = False):
-        """
-        Delete email from Gmail.
-
-        Args:
-            message_id: Gmail message ID
-            dry_run: If True, log action without deleting (for debugging)
-        """
-        try:
-            if dry_run:
-                logger.info(f"[DRY RUN] Would delete email: {message_id}")
-                return
-
-            logger.info(f"Deleting email: {message_id}")
-
-            self.service.users().messages().trash(
-                userId='me',
-                id=message_id
-            ).execute()
-
-            logger.info(f"Successfully deleted email: {message_id}")
-        except Exception as e:
-            raise DeletionError(f"Failed to delete email {message_id}: {e}")
-
     def _get_message(self, message_id: str) -> Dict:
         """
         Get message details.
@@ -533,15 +606,11 @@ class MessageNotFoundError(Exception):
     pass
 
 
-class DeletionError(Exception):
-    """Raised when email deletion fails."""
-    pass
-
 if __name__ == "__main__":
     import dotenv
     dotenv.load_dotenv()
 
-    ch = GmailChecker()
+    ch = GmailChecker(credentials_file="credentials.yaml")
     # mails = ch.search_emails(query="from:no-reply@strava.com")
     # print(mails)
     # m = ch._get_message(mails[0]['id'])
