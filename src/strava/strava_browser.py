@@ -6,6 +6,13 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from strava.browser_automation import BrowserAutomation
+from strava.browser_automation import (
+    BrowserAutomationError,
+    CookieConsentError,
+    ElementNotFoundError,
+    VerificationError,
+    LoginError
+)
 
 
 class StravaBrowser:
@@ -30,8 +37,8 @@ class StravaBrowser:
         """
         Dismiss cookie consent modal if present.
 
-        Returns:
-            True if consent dismissed, False if not present
+        Raises:
+            CookieConsentError: If consent cannot be dismissed
         """
         try:
             self.logger.info("Checking for cookie consent modal")
@@ -47,6 +54,8 @@ class StravaBrowser:
                 self.logger.info("No cookie consent modal found")
                 return False
 
+        except CookieConsentError:
+            raise
         except Exception as e:
             self.logger.warning(f"Error dismissing cookie consent: {e}")
             return False
@@ -73,6 +82,10 @@ class StravaBrowser:
 
         Returns:
             True if initiate_login successful, False otherwise
+
+        Raises:
+            LoginError: If email field not found after retries
+            ElementNotFoundError: If submit button not clickable after retries
         """
         try:
             self.logger.info("Starting Strava initiate_login")
@@ -113,8 +126,13 @@ class StravaBrowser:
                 # Wait for redirect
                 retry -= 1
 
-            return self._code_is_sent()
+            if not self._code_is_sent():
+                raise LoginError("Code not sent after retry attempts")
 
+            return True
+
+        except LoginError:
+            raise
         except Exception as e:
             self.logger.error(f"Strava initiate_login failed: {e}")
             return False
@@ -131,6 +149,10 @@ class StravaBrowser:
 
         Returns:
             True if login finalized successfully, False otherwise
+
+        Raises:
+            ElementNotFoundError: If OTP input field not found
+            LoginError: If OTP code cannot be entered or submitted
         """
         try:
             self.logger.info("Starting finalize_login with OTP")
@@ -142,7 +164,7 @@ class StravaBrowser:
                 )
             except TimeoutException:
                 self.logger.error("OTP input field not found")
-                return False
+                raise ElementNotFoundError(By.XPATH, "//input[@type='number']")
 
             # Clear any existing content
             otp_input.clear()
@@ -169,6 +191,8 @@ class StravaBrowser:
 
             return True
 
+        except ElementNotFoundError:
+            raise
         except Exception as e:
             self.logger.error(f"finalize_login failed: {e}")
             return False
@@ -179,6 +203,9 @@ class StravaBrowser:
 
         Returns:
             True if navigation successful, False otherwise
+
+        Raises:
+            VerificationError: If navigation to download page fails
         """
         try:
             self.logger.info("Navigating to download_my_account page")
@@ -192,8 +219,10 @@ class StravaBrowser:
                 return True
             else:
                 self.logger.warning(f"Navigation may not have completed. URL: {current_url}")
-                return False
+                raise VerificationError(f"Failed to navigate to download_my_account page. URL: {current_url}")
 
+        except VerificationError:
+            raise
         except Exception as e:
             self.logger.error(f"Navigation failed: {e}")
             return False
@@ -204,6 +233,10 @@ class StravaBrowser:
 
         Returns:
             True if button clicked successfully, False otherwise
+
+        Raises:
+            ElementNotFoundError: If button not found
+            VerificationError: If button cannot be clicked
         """
         try:
             self.logger.info("Clicking request-archive button")
@@ -217,8 +250,12 @@ class StravaBrowser:
                 return True
             else:
                 self.logger.error("Failed to click archive request button")
-                return False
+                raise VerificationError("Failed to click archive request button")
 
+        except VerificationError:
+            raise
+        except ElementNotFoundError:
+            raise
         except Exception as e:
             self.logger.error(f"Archive request failed: {e}")
             return False
@@ -229,6 +266,9 @@ class StravaBrowser:
 
         Returns:
             True if success message found, False otherwise
+
+        Raises:
+            VerificationError: If success message not found
         """
         try:
             self.logger.info("Verifying success message")
@@ -244,8 +284,10 @@ class StravaBrowser:
                 return True
             else:
                 self.logger.warning("Success message not found")
-                return False
+                raise VerificationError(f"Success message '{success_text}' not found")
 
+        except VerificationError:
+            raise
         except Exception as e:
             self.logger.error(f"Success message verification failed: {e}")
             return False
@@ -256,6 +298,9 @@ class StravaBrowser:
 
         Returns:
             True if extraction request completed successfully, False otherwise
+
+        Raises:
+            VerificationError: If navigation, button click, or verification fails
         """
         try:
             self.logger.info("Starting archive request extraction")
@@ -263,12 +308,12 @@ class StravaBrowser:
             # Step 1: Navigate to download_my_account
             if not self.navigate_to_download_account():
                 self.logger.error("Navigation failed")
-                return False
+                raise VerificationError("Navigation to download page failed")
 
             # Step 2: Click archive button
             if not self.trigger_archive_request():
                 self.logger.error("Archive button click failed")
-                return False
+                raise VerificationError("Archive button click failed")
 
             # Step 3: Verify success
             if not self.verify_success_message():
@@ -277,6 +322,12 @@ class StravaBrowser:
 
             self.logger.info("Archive request extraction completed")
             return True
+
+        except VerificationError:
+            raise
+        except Exception as e:
+            self.logger.error(f"Archive request extraction failed: {e}")
+            return False
 
         except Exception as e:
             self.logger.error(f"Archive request extraction failed: {e}")

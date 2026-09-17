@@ -19,7 +19,9 @@ Usage as module:
 
 import sys
 from pathlib import Path
+import os
 import dotenv
+from src.logging_config import get_logger, log_info, log_error, log_success, log_info_structured
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -29,6 +31,14 @@ from strava.browser_automation import BrowserAutomation
 from strava.strava_browser import StravaBrowser
 
 from google.gmail import GmailChecker
+from strava.browser_automation import (
+    BrowserAutomationError,
+    ElementNotFoundError,
+    VerificationError,
+    LoginError
+)
+
+logger = get_logger(__name__)
 
 def run_archive_request(
     email: str = "",
@@ -48,13 +58,11 @@ def run_archive_request(
     Returns:
         True if workflow completed successfully, False otherwise
     """
-    print("=" * 60)
-    print("Strava Browser Automation - Archive Request")
-    print("=" * 60)
+    log_info_structured("Strava Browser Automation - Archive Request")
 
     # Load configuration
-    print("\n[Configuration]")
-    print(f"Mode: {mode}")
+    log_info("\n[Configuration]")
+    log_info_structured({"mode": mode})
 
     env_config = BrowserConfig()
 
@@ -83,23 +91,22 @@ def run_archive_request(
     merged = {**env_config.to_dict(), **config}
     config = BrowserConfig(merged)
 
-    print(f"Headless: {config.get('headless', False)}")
-    print(f"Verbose: {config.get('verbose', True)}")
+    log_info_structured({"headless": config.get('headless', False), "verbose": config.get('verbose', True)})
 
     # Validate email
     email = config.get('email', env_config.get('email'))
 
     if not email:
-        print("\n[Error] Email is required")
-        print("Please set STRAVA_EMAIL in .env file")
+        log_error("Email is required")
+        log_error("Please set STRAVA_EMAIL in .env file")
         return False
 
-    print(f"\nEmail: {email}")
+    log_info(f"\nEmail: {email}")
 
     checker = GmailChecker(credentials_file="credentials.yaml")
 
     # Initialize browser automation
-    print("\n[Initialization]")
+    log_info("\n[Initialization]")
     try:
         with BrowserAutomation(config) as browser:
             browser.initialize_browser()
@@ -107,40 +114,42 @@ def run_archive_request(
             strava_browser = StravaBrowser(browser)
 
             # Run archive request workflow
-            print("\n[Workflow]")
-            print("\n[Step 1] Login to Strava")
-            login_initiated = strava_browser.initiate_login(email)
-            if not login_initiated:
-                print("[Error] Login failed")
+            log_info("\n[Workflow]")
+            log_info("\n[Step 1] Login to Strava")
+            try:
+                strava_browser.initiate_login(email)
+            except (LoginError, ElementNotFoundError) as e:
+                log_error(f"Login failed: {e}")
                 return False
 
             otp_code = checker.search_strava_code_emails()[0]['code']
 
-            login_success = strava_browser.finalize_login(otp_code)
-
-            if not login_success:
-                print("[Error] Login failed")
+            try:
+                strava_browser.finalize_login(otp_code)
+            except LoginError as e:
+                log_error(f"Login failed: {e}")
                 return False
 
-            print("\n[Step 2] Request archive extraction")
-            extract_success = strava_browser.request_extract()
+            log_info("\n[Step 2] Request archive extraction")
+            try:
+                strava_browser.request_extract()
+            except VerificationError as e:
+                log_error(f"Archive request extraction failed: {e}")
+                return False
 
             # Output results
-            print("\n" + "=" * 60)
-            if login_success and extract_success:
-                print("[Success] Archive request workflow completed")
-                print("The archive download should be available via email soon")
-            else:
-                print("[Error] Archive request workflow failed")
-            print("=" * 60)
+            log_info("\n" + "=" * 60)
+            log_success("Archive request workflow completed")
+            log_info("The archive download should be available via email soon")
+            log_info("=" * 60)
 
-            return login_success and extract_success
+            return True
 
     except KeyboardInterrupt:
-        print("\n\n[Interrupted] Workflow cancelled by user")
+        log_info("\n\n[Interrupted] Workflow cancelled by user")
         return False
-    except Exception as e:
-        print(f"\n[Error] Workflow failed: {e}")
+    except BrowserAutomationError as e:
+        log_error(f"\n[Error] Browser automation failed: {e}")
         import traceback
         traceback.print_exc()
         return False

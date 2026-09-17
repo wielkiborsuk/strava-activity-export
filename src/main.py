@@ -1,9 +1,19 @@
 import json
+import os
 import functions_framework
 from strava.browser_automation import BrowserAutomation
 from strava.strava_browser import StravaBrowser
-from config import get_secret
+
 from google.spreadsheet import append_activities
+from src.logging_config import get_logger, log_info, log_error
+from strava.browser_automation import (
+    BrowserAutomationError,
+    VerificationError,
+    ElementNotFoundError,
+    LoginError
+)
+
+logger = get_logger(__name__)
 
 
 @functions_framework.http
@@ -15,16 +25,14 @@ def extract_strava_activities(request):
         # 1. Gather Secrets
         user = request.args.get("user", "michal")
 
-        # Get Spreadsheet ID (can be in secret or passed in request)
-        spreadsheet_id = get_secret("STRAVA_SPREADSHEET_ID")
+        # Get Spreadsheet ID from environment variable
+        spreadsheet_id = os.environ.get("STRAVA_SPREADSHEET_ID")
         sheet_name = user.capitalize()
 
         activities = []
 
         # 5. Append to Spreadsheet (Ensuring unique IDs)
-        print(
-            f"Appending activities to spreadsheet {spreadsheet_id} in sheet {sheet_name}..."
-        )
+        log_info(f"Appending activities to spreadsheet {spreadsheet_id} in sheet {sheet_name}...")
 
         # Column definition for ordering and labels
         column_definition = [
@@ -67,8 +75,15 @@ def extract_strava_activities(request):
 
         return (json.dumps(result), 200, {"Content-Type": "application/json"})
 
+    except (BrowserAutomationError, VerificationError, ElementNotFoundError, LoginError) as e:
+        log_error(f"Browser automation failed: {e}")
+        return (
+            json.dumps({"error": str(e)}),
+            500,
+            {"Content-Type": "application/json"},
+        )
     except Exception as e:
-        print(f"Unhandled exception: {e}")
+        log_error(f"Unhandled exception: {e}")
         return (
             json.dumps({"error": str(e)}),
             500,

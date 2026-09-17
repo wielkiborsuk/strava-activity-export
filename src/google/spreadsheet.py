@@ -1,5 +1,8 @@
 from googleapiclient.discovery import build
 import google.auth
+from src.logging_config import get_logger, log_info, log_error
+
+logger = get_logger(__name__)
 
 
 def get_sheets_service():
@@ -33,7 +36,7 @@ def get_existing_ids(spreadsheet_id, sheet_name="Sheet1"):
         # Flatten the list and convert to strings
         return {str(row[0]) for row in values if row}
     except Exception as e:
-        print(f"Error fetching existing IDs: {e}")
+        log_error("Error fetching existing IDs", e)
         return set()
 
 
@@ -56,7 +59,7 @@ def append_activities(
     new_activities = [a for a in activities if str(a["id"]) not in existing_ids]
 
     if not new_activities:
-        print("No new activities to append.")
+        log_info("No new activities to append.")
         return 0
 
     # Prepare rows for appending
@@ -105,7 +108,7 @@ def append_activities(
                     valueInputOption="RAW",
                     body=body,
                 ).execute()
-                print(f"Headers written to sheet {sheet_name}.")
+                log_info(f"Headers written to sheet {sheet_name}.")
 
             # Now append data
             body = {"values": rows}
@@ -132,12 +135,12 @@ def append_activities(
                     insertDataOption="INSERT_ROWS",
                     body=body,
                 )
-                .execute()
+                 .execute()
             )
     except Exception as e:
-        print(f"Error appending activities: {e}")
+        log_error("Error appending activities", e)
         return 0
 
     updated_rows = result.get("updates", {}).get("updatedRows", 0)
-    print(f"Successfully appended {updated_rows} new activities.")
+    log_info(f"Successfully appended {updated_rows} new activities.")
     return updated_rows
