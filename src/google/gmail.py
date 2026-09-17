@@ -5,6 +5,7 @@ import logging
 from email.message import EmailMessage
 from typing import List, Dict, Optional, Tuple
 from email.policy import default as email_policy
+from googleapiclient.discovery import build
 import requests
 import yaml
 
@@ -62,27 +63,6 @@ class GmailChecker:
         # Initialize Gmail service
         self._initialize_service()
 
-    def _get_env_value(self, key: str) -> str:
-        """
-        Get environment variable value, first from local env then from config.
-
-        Args:
-            key: Environment variable name
-
-        Returns:
-            Environment variable value
-        """
-        local_value = __import__('os').environ.get(key)
-        if local_value:
-            return local_value
-
-        try:
-            config_module = __import__('config')
-            return config_module.get_secret(key)
-        except Exception as e:
-            logger.warning(f"Failed to get env value {key} from config: {e}")
-            return local_value
-
     def _get_client_credentials_from_file(self) -> Dict:
         """
         Get client credentials from credentials file.
@@ -111,7 +91,6 @@ class GmailChecker:
         try:
             credentials = self._get_credentials()
 
-            from googleapiclient.discovery import build
             self.service = build('gmail', 'v1', credentials=credentials)
 
             logger.info(f"Gmail service initialized for {self.email_address}")

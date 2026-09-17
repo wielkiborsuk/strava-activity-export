@@ -1,8 +1,9 @@
 import json
+import os
 import functions_framework
 from strava.browser_automation import BrowserAutomation
 from strava.strava_browser import StravaBrowser
-from config import get_secret
+
 from google.spreadsheet import append_activities
 
 
@@ -15,8 +16,8 @@ def extract_strava_activities(request):
         # 1. Gather Secrets
         user = request.args.get("user", "michal")
 
-        # Get Spreadsheet ID (can be in secret or passed in request)
-        spreadsheet_id = get_secret("STRAVA_SPREADSHEET_ID")
+        # Get Spreadsheet ID from environment variable
+        spreadsheet_id = os.environ.get("STRAVA_SPREADSHEET_ID")
         sheet_name = user.capitalize()
 
         activities = []
