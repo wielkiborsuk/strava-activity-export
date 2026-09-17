@@ -17,21 +17,14 @@ Usage as module:
 """
 
 import sys
-import os
-import shutil
 import tarfile
 import zipfile
-from pathlib import Path
-import time
-import argparse
+import locale
 from typing import Optional, Dict, Any
+import csv
+from datetime import datetime
+import requests
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
-
-from strava.browser_config import BrowserConfig
-from strava.browser_automation import BrowserAutomation
-from strava.strava_browser import StravaBrowser
 from google.gmail import GmailChecker
 
 
@@ -96,28 +89,22 @@ def download_archive(
     try:
         print(f"\n[Step 2] Downloading archive from {url}")
 
-        # Initialize browser automation for download
-        config = BrowserConfig()
-        with BrowserAutomation(config) as browser:
-            browser.initialize_browser()
+        # Create output directory if it doesn't exist
+        output_path_obj = Path(output_path)
+        output_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
-            # Navigate to download URL
-            browser.driver.get(url)
-            time.sleep(3)
+        # Download the archive using requests
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
 
-            # Wait for download to complete
-            time.sleep(2)
+        # Save the archive
+        with open(output_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
 
-            # Check if file was downloaded
-            # For automation downloads, we need to handle browser download behavior
-            # This is simplified - in production, you'd need to:
-            # 1. Configure browser download directory
-            # 2. Monitor download completion
-            # 3. Track downloaded file path
-
-            print(f"[Info] Download initiated for: {url}")
-            print(f"[Info] Archive should be downloaded to: {output_path}")
-            return True
+        print(f"[Success] Archive downloaded to {output_path}")
+        return True
 
     except Exception as e:
         print(f"[Error] Download failed: {e}")
@@ -180,20 +167,55 @@ def extract_archive(
         return False
 
 
-def clean_extract_dir(extract_dir: str = "tmp_extract"):
+def load_activities(extract_dir: str = "tmp_extract") -> list[Dict[str, Any]]:
     """
-    Clean up extraction directory.
+    Load activities from CSV file in extract directory.
 
     Args:
-        extract_dir: Directory to clean
+        extract_dir: Directory containing extracted archive
+
+    Returns:
+        List of activity dictionaries with required fields
     """
     try:
-        extract_path = Path(extract_dir)
-        if extract_path.exists():
-            shutil.rmtree(extract_path)
-            print(f"[Info] Cleaned up {extract_dir}")
+        print(f"\n[Step 4] Loading activities from {extract_dir}")
+
+        activities_csv = Path(extract_dir) / "activities.csv"
+
+        if not activities_csv.exists():
+            print(f"[Error] Activities CSV not found: {activities_csv}")
+            return []
+
+        # Read CSV with proper encoding
+        activities = []
+        with open(activities_csv, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                start_date_str = row.get("Data aktywności", "")
+                start_date = None
+                locale.setlocale(locale.LC_TIME, "pl_PL.UTF-8")
+                if start_date_str:
+                    start_date = datetime.strptime(start_date_str, "%d %b %Y, %H:%M:%S").isoformat()
+
+                activity = {
+                    "id": row.get("Identyfikator aktywności", ""),
+                    "start_date": start_date,
+                    "type": row.get("Rodzaj aktywności", ""),
+                    "name": row.get("Nazwa aktywności", ""),
+                    "distance": float(row.get("Dystans", 0)) if row.get("Dystans") else 0.0,
+                    "moving_time": int(float(row.get("Czas ruchu", 0))) if row.get("Czas ruchu") else 0,
+                    "elapsed_time": int(float(row.get("Czas całkowity", 0))) if row.get("Czas całkowity") else 0,
+                    "average_speed": float(row.get("Średnia prędkość", 0)) if row.get("Średnia prędkość") else 0.0,
+                    "max_speed": float(row.get("Maksymalna prędkość", 0)) if row.get("Maksymalna prędkość") else 0.0,
+                }
+                activities.append(activity)
+
+        print(f"[Success] Loaded {len(activities)} activities")
+        return activities
+
     except Exception as e:
-        print(f"[Warning] Cleanup failed: {e}")
+        print(f"[Error] Loading activities failed: {e}")
+        return []
 
 
 def run_analyze_extract() -> bool:
@@ -229,6 +251,9 @@ def run_analyze_extract() -> bool:
     # Step 3: Extract archive
     extract_success = extract_archive(archive_path, "tmp_extract")
 
+    # Step 4: Load activities
+    activities = load_activities("tmp_extract")
+
     # Output results
     print("\n" + "=" * 60)
     if archive_email and download_success and extract_success:
@@ -237,8 +262,9 @@ def run_analyze_extract() -> bool:
     else:
         print("[Error] Archive analysis workflow failed")
     print("=" * 60)
+    print(activities[:10])
 
-    return archive_email and download_success and extract_success
+    return archive_email and download_success and extract_success and activities
 
 
 if __name__ == "__main__":
