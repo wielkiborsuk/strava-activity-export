@@ -20,10 +20,10 @@ def _get_firestore_client():
             # App already initialized
             pass
         _firebase_initialized = True
-    
+
     if _firestore_client is None:
         _firestore_client = firestore.client()
-    
+
     return _firestore_client
 
 def get_secret(secret_id):
@@ -40,13 +40,13 @@ def get_secret(secret_id):
         # This provides a flat key-value structure within that document
         doc_ref = db.collection('config').document('secrets')
         doc = doc_ref.get()
-        
+
         if doc.exists:
             data = doc.to_dict()
             value = data.get(secret_id)
             if value is not None:
                 return str(value)
-        
+
         raise ValueError(f"Config {secret_id} not found in Firestore (config/secrets).")
     except Exception as e:
         print(f"Error accessing config {secret_id} in Firestore: {e}")

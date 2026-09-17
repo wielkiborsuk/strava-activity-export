@@ -538,16 +538,16 @@ class DeletionError(Exception):
     pass
 
 if __name__ == "__main__":
-    # import dotenv
-    # dotenv.load_dotenv()
+    import dotenv
+    dotenv.load_dotenv()
 
-    # ch = GmailChecker()
+    ch = GmailChecker()
     # mails = ch.search_emails(query="from:no-reply@strava.com")
     # print(mails)
     # m = ch._get_message(mails[0]['id'])
     # print(m)
-    # m = ch.search_strava_code_emails()
-    # print(m[0]['code'])
+    m = ch.search_strava_code_emails()
+    print(m[0]['code'])
 
     # m = ch.search_strava_export_emails()
     # print(m[0]['download_url'])

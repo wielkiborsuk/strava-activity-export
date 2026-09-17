@@ -52,7 +52,7 @@ class BrowserConfig:
             'timeout': self._get_env_int('BROWSER_TIMEOUT', 30),
             'explicit_wait': self._get_env_int('BROWSER_EXPLICIT_WAIT', 10),
             'verbose': self._get_env_bool('BROWSER_VERBOSE', True),
-            'firefox_binary': self._get_env('BROWSER_FIREFOX_BINARY', '/snap/firefox/8585/usr/lib/firefox/firefox'),
+            'firefox_binary': self._get_env('BROWSER_FIREFOX_BINARY', '/snap/firefox/current/usr/lib/firefox/firefox'),
         }
 
         # Merge with provided config

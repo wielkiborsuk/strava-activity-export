@@ -8,157 +8,102 @@ This script automates the Strava archive download request process:
 3. Click the request-archive button
 4. Verify success message
 
-Usage:
-    python download_account.py [options]
+Usage as module:
+    from download_account import run_archive_request
+    success = run_archive_request(
+        email="your@email.com",
+        mode="production",
+        headless=True
+    )
 """
 
-import argparse
 import sys
-import os
 from pathlib import Path
 import dotenv
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from browser_config import BrowserConfig
-from browser_automation import BrowserAutomation
-from strava_browser import StravaBrowser
+from strava.browser_config import BrowserConfig
+from strava.browser_automation import BrowserAutomation
+from strava.strava_browser import StravaBrowser
 
+from google.gmail import GmailChecker
 
-def parse_arguments() -> argparse.Namespace:
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Strava Browser Automation - Archive Request Trigger",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Debug mode with manual verification
-  python download_account.py --mode=debug
-
-  # Production mode (automatic)
-  python download_account.py --mode=production
-
-  # Custom pause duration
-  python download_account.py --mode=debug --pause=15
-
-  # Headless mode
-  python download_account.py --mode=production --headless=true
-        """
-    )
-
-    parser.add_argument(
-        '--mode',
-        type=str,
-        choices=['debug', 'production'],
-        default='debug',
-        help='Browser mode: debug (manual inspection) or production (automatic)'
-    )
-
-    parser.add_argument(
-        '--pause',
-        type=int,
-        default=10,
-        help='Manual pause timeout in seconds (default: 10)'
-    )
-
-    parser.add_argument(
-        '--verbose',
-        type=lambda x: x.lower() in ('true', '1', 'yes'),
-        default=True,
-        help='Enable verbose logging (default: True)'
-    )
-
-    parser.add_argument(
-        '--headless',
-        type=str,
-        choices=['true', 'false'],
-        help='Override headless mode (true/false)'
-    )
-
-    parser.add_argument(
-        '--email',
-        type=str,
-        help='Strava email (overrides .env)'
-    )
-
-    return parser.parse_args()
-
-
-def load_config(args: argparse.Namespace, env_config: BrowserConfig) -> BrowserConfig:
+def run_archive_request(
+    email: str = "",
+    mode: str = "debug",
+    pause: int = 10,
+    verbose: bool = True,
+    headless: bool = None,
+) -> bool:
     """
-    Load configuration from arguments and environment.
+    Run the Strava archive request workflow.
 
     Args:
-        args: Command-line arguments
-        env_config: Environment configuration
+        email: Strava email address (required if not in .env)
+        mode: Browser mode - 'debug' for manual inspection or 'production' for automatic
+        pause: Manual pause timeout in seconds (for debug mode)
+        verbose: Enable verbose logging
+        headless: Override headless mode (True/False/None for default)
 
     Returns:
-        Complete configuration
+        True if workflow completed successfully, False otherwise
     """
+    print("=" * 60)
+    print("Strava Browser Automation - Archive Request")
+    print("=" * 60)
+
+    # Load configuration
+    print("\n[Configuration]")
+    print(f"Mode: {mode}")
+
+    env_config = BrowserConfig()
+
+    # Build configuration dictionary
     config = {}
 
     # Set mode-specific configuration
-    if args.mode == 'debug':
+    if mode == 'debug':
         config['headless'] = False
         config['pause_on_action'] = True
-        config['manual_pause_timeout'] = args.pause
-        config['verbose'] = args.verbose
+        config['manual_pause_timeout'] = pause
+        config['verbose'] = verbose
     else:
         config['headless'] = True
         config['pause_on_action'] = False
         config['manual_pause_timeout'] = 0
         config['verbose'] = True
 
-    # Override with command-line arguments
-    if args.headless:
-        config['headless'] = args.headless.lower() in ('true', '1', 'yes', 'on')
+    # Override with provided parameters
+    if headless is not None:
+        config['headless'] = headless
 
-    # Override with command-line credentials
-    if args.email:
-        config['email'] = args.email
+    # Override with provided credentials
+    if email:
+        config['email'] = email
     else:
         config['email'] = os.getenv("STRAVA_EMAIL", "")
 
     # Merge with environment configuration
     merged = {**env_config.to_dict(), **config}
-
-    return BrowserConfig(merged)
-
-
-def main():
-    """Main entry point."""
-    print("=" * 60)
-    print("Strava Browser Automation - Archive Request")
-    print("=" * 60)
-
-    # Parse arguments
-    try:
-        args = parse_arguments()
-    except SystemExit:
-        return
-
-    # Load configuration
-    print("\n[Configuration]")
-    print(f"Mode: {args.mode}")
-
-    env_config = BrowserConfig()
-    config = load_config(args, env_config)
+    config = BrowserConfig(merged)
 
     print(f"Headless: {config.get('headless', False)}")
     print(f"Manual Pause: {config.get('manual_pause_timeout', 10)} seconds")
     print(f"Verbose: {config.get('verbose', True)}")
 
-    # Get credentials
+    # Validate email
     email = config.get('email', env_config.get('email'))
 
     if not email:
-        print("\n[Error] Email are required")
+        print("\n[Error] Email is required")
         print("Please set STRAVA_EMAIL in .env file")
-        print("Or use --email argument")
-        return
+        return False
 
     print(f"\nEmail: {email}")
+
+    checker = GmailChecker()
 
     # Initialize browser automation
     print("\n[Initialization]")
@@ -170,25 +115,43 @@ def main():
 
             # Run archive request workflow
             print("\n[Workflow]")
-            success = strava_browser.run_workflow(email, "")
+            print("\n[Step 1] Login to Strava")
+            login_initiated = strava_browser.initiate_login(email)
+            if not login_initiated:
+                print("[Error] Login failed")
+                return False
+
+            otp_code = checker.search_strava_code_emails()[0]['code']
+
+            login_success = strava_browser.finalize_login(otp_code)
+
+            if not login_success:
+                print("[Error] Login failed")
+                return False
+
+            print("\n[Step 2] Request archive extraction")
+            extract_success = strava_browser.request_extract()
 
             # Output results
             print("\n" + "=" * 60)
-            if success:
+            if login_success and extract_success:
                 print("[Success] Archive request workflow completed")
                 print("The archive download should be available via email soon")
             else:
                 print("[Error] Archive request workflow failed")
             print("=" * 60)
 
+            return login_success and extract_success
+
     except KeyboardInterrupt:
         print("\n\n[Interrupted] Workflow cancelled by user")
-        return
+        return False
     except Exception as e:
         print(f"\n[Error] Workflow failed: {e}")
         import traceback
         traceback.print_exc()
+        return False
 
 
 if __name__ == "__main__":
-    main()
+    run_archive_request("wielki.borsuk@gmail.com")

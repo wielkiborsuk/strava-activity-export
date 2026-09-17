@@ -5,7 +5,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-from browser_automation import BrowserAutomation
+from strava.browser_automation import BrowserAutomation
 
 
 class StravaBrowser:
@@ -20,6 +20,8 @@ class StravaBrowser:
         """
         self.browser = browser
         self.logger = self.browser.logger
+        if not browser.driver:
+            raise RuntimeError("browser didn't provide valid driver object")
         self.driver = browser.driver
         self.config = browser.config
         self.logger.info("StravaBrowser initialized")
@@ -35,7 +37,7 @@ class StravaBrowser:
             self.logger.info("Checking for cookie consent modal")
 
             # Try to find and click the decline button
-            decline_button = self.get_element(By.ID, "CybotCookiebotDialogBodyButtonDecline", timeout=3)
+            decline_button = self.browser.get_element(By.ID, "CybotCookiebotDialogBodyButtonDecline", timeout=3)
             if decline_button:
                 decline_button.click()
                 self.logger.info("Cookie consent modal dismissed")
@@ -49,21 +51,33 @@ class StravaBrowser:
             self.logger.warning(f"Error dismissing cookie consent: {e}")
             return False
 
-    def login(self, email: str, password: str) -> bool:
+
+    def _code_is_sent(self):
+        success_text = "We sent you a code"
+        try:
+            WebDriverWait(self.driver, 5).until(
+                EC.text_to_be_present_in_element((By.XPATH, "//body"), success_text)
+            )
+            self.logger.info("Verification code already sent")
+            return True
+        except TimeoutException:
+            self.logger.info("No code verification visible")
+            return False
+
+    def initiate_login(self, email: str) -> bool:
         """
         Login to Strava using email.
 
         Args:
             email: Email address
-            password: Password
 
         Returns:
-            True if login successful, False otherwise
+            True if initiate_login successful, False otherwise
         """
         try:
-            self.logger.info("Starting Strava login")
+            self.logger.info("Starting Strava initiate_login")
 
-            # Navigate to login page
+            # Navigate to initiate_login page
             self.driver.get("https://www.strava.com/login")
             # time.sleep(2)
 
@@ -72,9 +86,9 @@ class StravaBrowser:
 
             retry = 4
 
-            while not ("dashboard" in self.driver.current_url or "athlete" in self.driver.current_url) and retry:
+            while not self._code_is_sent() and retry:
                 # Find and input email
-                email_field = self.get_element(By.ID, "mobile-email")
+                email_field = self.browser.get_element(By.ID, "mobile-email")
                 if email_field:
                     email_field.clear()
                     email_field.send_keys(email)
@@ -83,20 +97,10 @@ class StravaBrowser:
                     self.logger.error("Email field not found")
                     continue
 
-                # Find and input password
-                # password_field = self.get_element(By.ID, "password")
-                # if password_field:
-                    # password_field.clear()
-                    # password_field.send_keys(password)
-                    # self.logger.info("Password entered")
-                # else:
-                    # self.logger.error("Password field not found")
-                    # return False
-
                 # Submit form
-                time.sleep(7)
+                # time.sleep(7)
                 try:
-                    submit_button = WebDriverWait(self.driver, 10).until(
+                    submit_button = WebDriverWait(self.driver, 2).until(
                         EC.element_to_be_clickable((By.XPATH, "//button[@type='submit']"))
                     )
                     submit_button.click()
@@ -107,23 +111,16 @@ class StravaBrowser:
                     continue
 
                 # Wait for redirect
-                time.sleep(3)
                 retry -= 1
 
-                #TODO - verify a code screen (by finding element for email or code
-                #TODO - if none can be found, still check if already redirected to dashboard
-
-            # Verify login success
-            if "dashboard" in self.driver.current_url or "athlete" in self.driver.current_url:
-                self.logger.info("Strava login successful")
-                return True
-            else:
-                self.logger.info("Not logged in properly")
-                return False
+            return self._code_is_sent()
 
         except Exception as e:
-            self.logger.error(f"Strava login failed: {e}")
+            self.logger.error(f"Strava initiate_login failed: {e}")
             return False
+
+    def finalize_login(self, otp: str) -> bool:
+        return False
 
     def navigate_to_download_account(self) -> bool:
         """
@@ -202,57 +199,34 @@ class StravaBrowser:
             self.logger.error(f"Success message verification failed: {e}")
             return False
 
-    def run_workflow(self, email: str, password: str) -> bool:
+    def request_extract(self) -> bool:
         """
-        Run the complete archive request workflow.
-
-        Args:
-            email: Email address
-            password: Password
+        Navigate to download_my_account, click archive button, and verify success.
 
         Returns:
-            True if workflow completed successfully, False otherwise
+            True if extraction request completed successfully, False otherwise
         """
         try:
-            self.logger.info("Starting archive request workflow")
+            self.logger.info("Starting archive request extraction")
 
-            # Step 1: Login
-            if not self.login(email, password):
-                self.logger.error(f"Login failed")
-                return False
-
-            # Step 2: Navigate to download_my_account
+            # Step 1: Navigate to download_my_account
             if not self.navigate_to_download_account():
                 self.logger.error("Navigation failed")
                 return False
 
-            # Step 3: Click archive button
+            # Step 2: Click archive button
             if not self.trigger_archive_request():
                 self.logger.error("Archive button click failed")
                 return False
 
-            # Step 4: Verify success
+            # Step 3: Verify success
             if not self.verify_success_message():
                 self.logger.warning("Success message verification failed")
                 # This is not critical for the workflow
 
-            self.logger.info("Archive request workflow completed")
+            self.logger.info("Archive request extraction completed")
             return True
 
         except Exception as e:
-            self.logger.error(f"Archive request workflow failed: {e}")
+            self.logger.error(f"Archive request extraction failed: {e}")
             return False
-
-    def get_element(self, by: str, value: str, timeout: int = None) -> Optional:
-        """
-        Get element using browser automation.
-
-        Args:
-            by: By locator strategy
-            value: Locator value
-            timeout: Timeout in seconds
-
-        Returns:
-            WebElement if found, None otherwise
-        """
-        return self.browser.get_element(by, value, timeout)
