@@ -120,7 +120,58 @@ class StravaBrowser:
             return False
 
     def finalize_login(self, otp: str) -> bool:
-        return False
+        """
+        Finalize login by entering OTP code.
+
+        Finds the only input with type 'number' on the page, inserts the OTP code,
+        and submits using the "Next" button.
+
+        Args:
+            otp: OTP verification code
+
+        Returns:
+            True if login finalized successfully, False otherwise
+        """
+        try:
+            self.logger.info("Starting finalize_login with OTP")
+
+            # Wait for OTP input field to appear
+            try:
+                otp_input = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//input[@type='number']"))
+                )
+            except TimeoutException:
+                self.logger.error("OTP input field not found")
+                return False
+
+            # Clear any existing content
+            otp_input.clear()
+
+            # Insert OTP code
+            otp_input.send_keys(otp)
+            self.logger.info(f"OTP code entered: {otp}")
+
+            # Wait for "Next" button to appear
+            try:
+                next_button = WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[text()='Next']"))
+                )
+            except TimeoutException:
+                self.logger.error("Next button not found")
+                return False
+
+            # Click the Next button
+            next_button.click()
+            self.logger.info("Next button clicked")
+
+            # Wait for redirect or login success
+            time.sleep(3)
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"finalize_login failed: {e}")
+            return False
 
     def navigate_to_download_account(self) -> bool:
         """

@@ -1,5 +1,4 @@
 .venv/
-.venv/
 .env
 __pycache__/
 *.py[cod]
@@ -14,3 +13,4 @@ browser_automation.log
 dist/
 build/
 *.whl
+credentials.yaml

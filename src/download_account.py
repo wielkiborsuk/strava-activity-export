@@ -33,7 +33,6 @@ from google.gmail import GmailChecker
 def run_archive_request(
     email: str = "",
     mode: str = "debug",
-    pause: int = 10,
     verbose: bool = True,
     headless: bool = None,
 ) -> bool:
@@ -43,7 +42,6 @@ def run_archive_request(
     Args:
         email: Strava email address (required if not in .env)
         mode: Browser mode - 'debug' for manual inspection or 'production' for automatic
-        pause: Manual pause timeout in seconds (for debug mode)
         verbose: Enable verbose logging
         headless: Override headless mode (True/False/None for default)
 
@@ -66,13 +64,9 @@ def run_archive_request(
     # Set mode-specific configuration
     if mode == 'debug':
         config['headless'] = False
-        config['pause_on_action'] = True
-        config['manual_pause_timeout'] = pause
         config['verbose'] = verbose
     else:
         config['headless'] = True
-        config['pause_on_action'] = False
-        config['manual_pause_timeout'] = 0
         config['verbose'] = True
 
     # Override with provided parameters
@@ -90,7 +84,6 @@ def run_archive_request(
     config = BrowserConfig(merged)
 
     print(f"Headless: {config.get('headless', False)}")
-    print(f"Manual Pause: {config.get('manual_pause_timeout', 10)} seconds")
     print(f"Verbose: {config.get('verbose', True)}")
 
     # Validate email
