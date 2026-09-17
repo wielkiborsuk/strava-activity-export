@@ -522,6 +522,7 @@ class GmailChecker:
                 r'https?://[^\s"\']+/exports/[^"\s\'<>]*',
                 r'https?://[^\s"\']+/[a-z]+/exports/[^"\s\'<>]*',
                 r'https://[^\s"\']+/strava.portability/athlete/[^"\s\'<>]*',
+                r'https://[^\s"\']+email.strava.com/ls/[^"\s\'<>]*'
             ]
 
             for pattern in patterns:
