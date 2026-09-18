@@ -1,9 +1,10 @@
 import os
 import yaml
-from typing import Dict, Optional
+from typing import Dict
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from logging_config import get_logger
+from datetime import datetime
 
 logger = get_logger(__name__)
 
@@ -20,7 +21,7 @@ class CredentialHandler:
         """
         self.credentials_file = credentials_file
 
-    def load_from_file(self) -> Optional[Dict]:
+    def load_from_file(self) -> Dict:
         """
         Load credentials from YAML file.
 
@@ -29,7 +30,7 @@ class CredentialHandler:
         """
         try:
             if not self.credentials_file or not os.path.exists(self.credentials_file):
-                return None
+                raise ValueError("valid credentials file needed")
 
             with open(self.credentials_file, 'r') as f:
                 credentials_data = yaml.safe_load(f)
@@ -60,6 +61,7 @@ class CredentialHandler:
 
             access_token = credentials_data.get('access_token')
             refresh_token = credentials_data.get('refresh_token')
+            expiry = datetime.fromisoformat(credentials_data.get('expiry', '')).replace(tzinfo=None)
 
             # Try to use provided access tokens with refresh token
             if refresh_token:
@@ -68,7 +70,9 @@ class CredentialHandler:
                     refresh_token=refresh_token,
                     client_id=client_id,
                     client_secret=client_secret,
-                    token_uri=token_uri
+                    token_uri=token_uri,
+                    scopes=credentials_data.get('scopes'),
+                    expiry=expiry
                 )
 
                 # Check if token is expired and refresh if needed
@@ -84,7 +88,10 @@ class CredentialHandler:
                         logger.info("Token refreshed successfully")
                         access_token = credentials.token
             else:
-                credentials = Credentials(token=access_token)
+                credentials = Credentials(
+                    token=access_token,
+                    expiry=expiry
+                )
 
             return credentials
         except Exception as e:
