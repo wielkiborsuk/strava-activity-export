@@ -1,19 +1,18 @@
 from googleapiclient.discovery import build
-import google.auth
-from src.logging_config import get_logger, log_info, log_error
+from logging_config import get_logger, log_info, log_error
+from google.auth_helper import CredentialHandler
 
 logger = get_logger(__name__)
 
 
-def get_sheets_service():
+def get_sheets_service(credentials_file="sheet-credentials.yaml"):
     """
-    Initializes the Google Sheets API service using default credentials.
-    In Cloud Functions, this uses the service account.
-    Locally, it uses application default credentials.
+    Initializes the Google Sheets API service using credentials from file.
+    Loads credentials from credentials YAML file for persistence.
     """
-    credentials, _ = google.auth.default(
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
+    credential_handler = CredentialHandler(credentials_file)
+    credentials = credential_handler.get_credentials()
+
     return build("sheets", "v4", credentials=credentials)
 
 

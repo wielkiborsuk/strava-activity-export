@@ -23,8 +23,10 @@ import csv
 from datetime import datetime
 import requests
 import tempfile
+import os
 
 from google.gmail import GmailChecker
+from google.spreadsheet import append_activities
 
 
 class ArchiveDownloadError(Exception):
@@ -189,7 +191,7 @@ def load_activities(extract_dir: str = "tmp_extract") -> list[Dict[str, Any]]:
                     start_date = datetime.strptime(start_date_str, "%d %b %Y, %H:%M:%S").isoformat()
 
                 activity = {
-                    "id": row.get("Identyfikator aktywności", ""),
+                    "id": int(row.get("Identyfikator aktywności", "")),
                     "start_date": start_date,
                     "type": row.get("Rodzaj aktywności", ""),
                     "name": row.get("Nazwa aktywności", ""),
@@ -200,6 +202,8 @@ def load_activities(extract_dir: str = "tmp_extract") -> list[Dict[str, Any]]:
                     "max_speed": float(row.get("Maksymalna prędkość", 0)) if row.get("Maksymalna prędkość") else 0.0,
                 }
                 activities.append(activity)
+
+        activities = sorted(activities, key=lambda a: a.get('start_date', ''))
 
         print(f"[Success] Loaded {len(activities)} activities")
         return activities
@@ -252,12 +256,51 @@ def run_analyze_extract():
             # Step 4: Load activities - must be done before cleanup
             activities = load_activities(str(extract_dir))
 
+            # Step 5: Append to Spreadsheet (Ensuring unique IDs)
+            spreadsheet_id = os.environ.get("STRAVA_SPREADSHEET_ID")
+            if spreadsheet_id:
+                print(f"\n[Step 5] Appending activities to spreadsheet {spreadsheet_id}...")
+
+                # Column definition for ordering and labels
+                column_definition = [
+                    "id",
+                    "start_date",
+                    "type",
+                    "name",
+                    "distance",
+                    "moving_time",
+                    "elapsed_time",
+                    "average_speed",
+                    "max_speed",
+                ]
+                column_labels = {
+                    "id": "ID",
+                    "start_date": "Date",
+                    "type": "Activity Type",
+                    "name": "Activity Name",
+                    "distance": "Distance (m)",
+                    "moving_time": "Moving Time (s)",
+                    "elapsed_time": "Elapsed Time (s)",
+                    "average_speed": "Avg Speed (m/s)",
+                    "max_speed": "Max Speed (m/s)",
+                }
+
+                updated_rows = append_activities(
+                    spreadsheet_id,
+                    activities,
+                    sheet_name="Michal",
+                    column_definition=column_definition,
+                    column_labels=column_labels,
+                )
+
+                print(f"[Success] Added {updated_rows} new activities")
+
             # Output results
             print("\n" + "=" * 60)
             print("[Success] Archive analysis workflow completed")
             print(f"Extracted to: {extract_dir}")
             print("=" * 60)
-            print(activities[:10])
+            print(f"Activities loaded: {len(activities)}")
 
             return activities
 
