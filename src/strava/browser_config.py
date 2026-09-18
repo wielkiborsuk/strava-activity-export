@@ -2,7 +2,7 @@ import os
 import dotenv
 from pathlib import Path
 from typing import Dict, Any, Optional
-from src.logging_config import get_logger, log_info
+from logging_config import get_logger, log_info
 
 logger = get_logger(__name__)
 

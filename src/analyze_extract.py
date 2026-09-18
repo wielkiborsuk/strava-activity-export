@@ -23,10 +23,11 @@ import csv
 from datetime import datetime
 import requests
 import tempfile
-import os
+import argparse
 
 from google.gmail import GmailChecker
 from google.spreadsheet import append_activities
+from config import load_config, get_profile_config
 
 
 class ArchiveDownloadError(Exception):
@@ -213,9 +214,12 @@ def load_activities(extract_dir: str = "tmp_extract") -> list[Dict[str, Any]]:
         raise ActivitiesLoadingError(error_msg, extract_dir) from e
 
 
-def run_analyze_extract():
+def run_analyze_extract(profile_name: str):
     """
     Run the Strava archive analysis workflow.
+
+    Args:
+        profile_name: Profile name to use (michal, antek)
 
     Returns:
         List of activity dictionaries with required fields
@@ -230,11 +234,20 @@ def run_analyze_extract():
     print("Strava Archive Analysis - Extract and Analyze")
     print("=" * 60)
 
+    try:
+        config = load_config("config.yaml")
+        profile_config = get_profile_config(config, profile_name)
+        print(f"\n[Profile] Using profile: {profile_name}")
+    except Exception as e:
+        print(f"[Warning] Failed to load profile configuration: {e}")
+        raise
+
     # Use temporary directory for archive and extracted files
     try:
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Step 1: Find archive email
-            checker = GmailChecker(credentials_file="credentials.yaml")
+            checker = GmailChecker(credentials_file=profile_config.get('credentials_file'))
+
             archive_email = checker.search_strava_export_emails()[0]
 
             if not archive_email:
@@ -257,43 +270,54 @@ def run_analyze_extract():
             activities = load_activities(str(extract_dir))
 
             # Step 5: Append to Spreadsheet (Ensuring unique IDs)
-            spreadsheet_id = os.environ.get("STRAVA_SPREADSHEET_ID")
-            if spreadsheet_id:
-                print(f"\n[Step 5] Appending activities to spreadsheet {spreadsheet_id}...")
+            # Load spreadsheet credentials from config
+            try:
+                config_dict = load_config("config.yaml")
+                spreadsheet_config = config_dict.get('spreadsheet', {})
+            except Exception as e:
+                print(f"[Warning] Failed to load spreadsheet configuration: {e}")
+                raise
 
-                # Column definition for ordering and labels
-                column_definition = [
-                    "id",
-                    "start_date",
-                    "type",
-                    "name",
-                    "distance",
-                    "moving_time",
-                    "elapsed_time",
-                    "average_speed",
-                    "max_speed",
-                ]
-                column_labels = {
-                    "id": "ID",
-                    "start_date": "Date",
-                    "type": "Activity Type",
-                    "name": "Activity Name",
-                    "distance": "Distance (m)",
-                    "moving_time": "Moving Time (s)",
-                    "elapsed_time": "Elapsed Time (s)",
-                    "average_speed": "Avg Speed (m/s)",
-                    "max_speed": "Max Speed (m/s)",
-                }
+            spreadsheet_id = spreadsheet_config.get('spreadsheet_id')
+            print(f"\n[Step 5] Appending activities to spreadsheet {spreadsheet_id}...")
 
-                updated_rows = append_activities(
-                    spreadsheet_id,
-                    activities,
-                    sheet_name="Michal",
-                    column_definition=column_definition,
-                    column_labels=column_labels,
-                )
+            # Column definition for ordering and labels
+            column_definition = [
+                "id",
+                "start_date",
+                "type",
+                "name",
+                "distance",
+                "moving_time",
+                "elapsed_time",
+                "average_speed",
+                "max_speed",
+            ]
+            column_labels = {
+                "id": "ID",
+                "start_date": "Date",
+                "type": "Activity Type",
+                "name": "Activity Name",
+                "distance": "Distance (m)",
+                "moving_time": "Moving Time (s)",
+                "elapsed_time": "Elapsed Time (s)",
+                "average_speed": "Avg Speed (m/s)",
+                "max_speed": "Max Speed (m/s)",
+            }
 
-                print(f"[Success] Added {updated_rows} new activities")
+            # Use sheet_name from profile if available
+            sheet_name = profile_config.get('sheet_name')
+
+            updated_rows = append_activities(
+                spreadsheet_config.get('credentials_file'),
+                spreadsheet_id,
+                activities,
+                sheet_name=sheet_name,
+                column_definition=column_definition,
+                column_labels=column_labels,
+            )
+
+            print(f"[Success] Added {updated_rows} new activities")
 
             # Output results
             print("\n" + "=" * 60)
@@ -312,8 +336,13 @@ def run_analyze_extract():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Strava Archive Analysis - Extract and analyze activities")
+    parser.add_argument("--profile", "-p", type=str, help="Profile name to use (michal, antek)")
+
+    args = parser.parse_args()
+
     try:
-        activities = run_analyze_extract()
+        activities = run_analyze_extract(profile_name=args.profile)
         sys.exit(0 if activities else 1)
     except Exception as e:
         print(f"\n[Error] Main execution failed: {e}")

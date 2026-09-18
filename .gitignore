@@ -14,3 +14,4 @@ dist/
 build/
 *.whl
 *credentials*.yaml
+secret/

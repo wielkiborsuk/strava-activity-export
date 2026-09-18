@@ -11,20 +11,12 @@ This script automates the Strava archive download request process:
 Usage as module:
     from download_account import run_archive_request
     success = run_archive_request(
-        email="your@email.com",
-        mode="production",
         headless=True
     )
 """
 
-import sys
-from pathlib import Path
-import os
-import dotenv
-from src.logging_config import get_logger, log_info, log_error, log_success, log_info_structured
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+import argparse
+from logging_config import get_logger, log_info, log_error
 
 from strava.browser_config import BrowserConfig
 from strava.browser_automation import BrowserAutomation
@@ -37,14 +29,13 @@ from strava.browser_automation import (
     VerificationError,
     LoginError
 )
+from config import load_config, get_profile_config
 
 logger = get_logger(__name__)
 
 def run_archive_request(
-    email: str = "",
-    mode: str = "debug",
-    verbose: bool = True,
-    headless: bool = None,
+    profile_name: str,
+    headless: bool = False,
 ) -> bool:
     """
     Run the Strava archive request workflow.
@@ -54,61 +45,31 @@ def run_archive_request(
         mode: Browser mode - 'debug' for manual inspection or 'production' for automatic
         verbose: Enable verbose logging
         headless: Override headless mode (True/False/None for default)
+        profile_name: Profile name to use for credentials
 
     Returns:
         True if workflow completed successfully, False otherwise
     """
-    log_info_structured("Strava Browser Automation - Archive Request")
+    log_info("Strava Browser Automation - Archive Request")
 
-    # Load configuration
-    log_info("\n[Configuration]")
-    log_info_structured({"mode": mode})
-
-    env_config = BrowserConfig()
+    try:
+        config = load_config("config.yaml")
+        profile_config = get_profile_config(config, profile_name)
+        log_info(f"Profile: {profile_name}")
+    except Exception as e:
+        log_error(f"Failed to load profile configuration: {e}")
+        raise
 
     # Build configuration dictionary
-    config = {}
+    browser_config = BrowserConfig()
+    browser_config.config['headless'] = headless
 
-    # Set mode-specific configuration
-    if mode == 'debug':
-        config['headless'] = False
-        config['verbose'] = verbose
-    else:
-        config['headless'] = True
-        config['verbose'] = True
-
-    # Override with provided parameters
-    if headless is not None:
-        config['headless'] = headless
-
-    # Override with provided credentials
-    if email:
-        config['email'] = email
-    else:
-        config['email'] = os.getenv("STRAVA_EMAIL", "")
-
-    # Merge with environment configuration
-    merged = {**env_config.to_dict(), **config}
-    config = BrowserConfig(merged)
-
-    log_info_structured({"headless": config.get('headless', False), "verbose": config.get('verbose', True)})
-
-    # Validate email
-    email = config.get('email', env_config.get('email'))
-
-    if not email:
-        log_error("Email is required")
-        log_error("Please set STRAVA_EMAIL in .env file")
-        return False
-
-    log_info(f"\nEmail: {email}")
-
-    checker = GmailChecker(credentials_file="credentials.yaml")
+    checker = GmailChecker(credentials_file=profile_config.get('credentials_file', "credentials.yaml"))
 
     # Initialize browser automation
     log_info("\n[Initialization]")
     try:
-        with BrowserAutomation(config) as browser:
+        with BrowserAutomation(browser_config.to_dict()) as browser:
             browser.initialize_browser()
             # Create Strava browser automation
             strava_browser = StravaBrowser(browser)
@@ -117,7 +78,7 @@ def run_archive_request(
             log_info("\n[Workflow]")
             log_info("\n[Step 1] Login to Strava")
             try:
-                strava_browser.initiate_login(email)
+                strava_browser.initiate_login(profile_config.get('email'))
             except (LoginError, ElementNotFoundError) as e:
                 log_error(f"Login failed: {e}")
                 return False
@@ -139,7 +100,7 @@ def run_archive_request(
 
             # Output results
             log_info("\n" + "=" * 60)
-            log_success("Archive request workflow completed")
+            log_info("Archive request workflow completed")
             log_info("The archive download should be available via email soon")
             log_info("=" * 60)
 
@@ -156,4 +117,11 @@ def run_archive_request(
 
 
 if __name__ == "__main__":
-    run_archive_request("wielki.borsuk@gmail.com")
+    parser = argparse.ArgumentParser(description="Strava Archive Request - Download and analyze activities")
+    parser.add_argument("--profile", "-p", type=str, help="Profile name to use (michal, antek)")
+    parser.add_argument("--headless", action="store_true", help="Run in headless mode")
+
+    args = parser.parse_args()
+
+    # Run with profile if specified
+    run_archive_request(profile_name=args.profile, headless=args.headless)

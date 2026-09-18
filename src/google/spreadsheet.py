@@ -5,7 +5,7 @@ from google.auth_helper import CredentialHandler
 logger = get_logger(__name__)
 
 
-def get_sheets_service(credentials_file="sheet-credentials.yaml"):
+def get_sheets_service(credentials_file):
     """
     Initializes the Google Sheets API service using credentials from file.
     Loads credentials from credentials YAML file for persistence.
@@ -16,12 +16,11 @@ def get_sheets_service(credentials_file="sheet-credentials.yaml"):
     return build("sheets", "v4", credentials=credentials)
 
 
-def get_existing_ids(spreadsheet_id, sheet_name="Sheet1"):
+def get_existing_ids(service, spreadsheet_id, sheet_name="Sheet1"):
     """
     Fetches the 'id' column (assumed to be Column A based on the mapping)
     to prevent duplicates.
     """
-    service = get_sheets_service()
     sheet = service.spreadsheets()
 
     # We'll assume Column A is the ID column (id is the 6th field in our mapping)
@@ -40,6 +39,7 @@ def get_existing_ids(spreadsheet_id, sheet_name="Sheet1"):
 
 
 def append_activities(
+    credentials_file,
     spreadsheet_id,
     activities,
     sheet_name="Sheet1",
@@ -52,7 +52,8 @@ def append_activities(
     if not activities:
         return 0
 
-    existing_ids = get_existing_ids(spreadsheet_id, sheet_name)
+    service = get_sheets_service(credentials_file=credentials_file)
+    existing_ids = get_existing_ids(service, spreadsheet_id, sheet_name)
 
     # Filter for unique activities
     new_activities = [a for a in activities if str(a["id"]) not in existing_ids]
@@ -81,7 +82,6 @@ def append_activities(
                 ]
             )
 
-    service = get_sheets_service()
     sheet = service.spreadsheets()
 
     # Check if sheet is empty and write headers if needed
