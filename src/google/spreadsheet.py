@@ -1,6 +1,6 @@
 from googleapiclient.discovery import build
 import google.auth
-from src.logging_config import get_logger, log_info, log_error
+from logging_config import get_logger, log_info, log_error
 
 logger = get_logger(__name__)
 

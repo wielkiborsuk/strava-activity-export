@@ -1,24 +1,18 @@
 import base64
 import re
-import os
+from email.message import EmailMessage
 from typing import List, Dict, Optional
 from googleapiclient.discovery import build
 import requests
-import yaml
 
-from src.logging_config import get_logger, log_info, log_error
+from logging_config import get_logger, log_info
+from google.auth_helper import CredentialHandler
 
 logger = get_logger(__name__)
 
-try:
-    from google.oauth2.credentials import Credentials
-except ImportError:
-    try:
-        from google.auth.credentials import Credentials
-    except ImportError:
-        from google.oauth2.credentials import Credentials
-
-from google.auth.transport.requests import Request
+class CredentialError(Exception):
+    """Raised when credentials are missing or invalid."""
+    pass
 
 # Strava email patterns
 STRAVA_SENDER = 'no-reply@strava.com'
@@ -36,153 +30,27 @@ class GmailChecker:
         Initialize Gmail client with credentials.
 
         Args:
-            email_address: Gmail address (required)
-            access_token: OAuth2 access token (required)
-            refresh_token: OAuth2 refresh token (required)
             credentials_file: Path to credentials YAML file for persistence
         """
         self.service = None
         self.credentials = None
-        self.credentials_file = credentials_file
 
-        # Load credentials from file if provided
-        credentials_data = self._load_credentials_from_file()
-        if credentials_data:
-            self.email_address = credentials_data.get('email')
-            self.access_token = credentials_data.get('token')
-            self.refresh_token = credentials_data.get('refresh_token')
-            self.credentials_file = credentials_file
-
-        if not self.email_address or not self.access_token:
-            raise CredentialError("Missing Gmail credentials")
+        # Initialize credential handler
+        self.credential_handler = CredentialHandler(credentials_file)
 
         # Initialize Gmail service
         self._initialize_service()
 
-    def _get_client_credentials_from_file(self) -> Dict:
-        """
-        Get client credentials from credentials file.
-
-        Returns:
-            Dictionary with client_id, client_secret, and token_uri
-        """
-        try:
-            if not self.credentials_file or not os.path.exists(self.credentials_file):
-                return {}
-
-            with open(self.credentials_file, 'r') as f:
-                credentials_data = yaml.safe_load(f)
-
-            return {
-                'client_id': credentials_data.get('client_id'),
-                'client_secret': credentials_data.get('client_secret'),
-                'token_uri': credentials_data.get('token_uri')
-            }
-        except Exception as e:
-            logger.warning(f"Failed to load client credentials from file: {e}")
-            return {}
-
     def _initialize_service(self):
         """Initialize Gmail API service."""
         try:
-            credentials = self._get_credentials()
+            credentials = self.credential_handler.get_credentials()
 
             self.service = build('gmail', 'v1', credentials=credentials)
 
-            logger.info(f"Gmail service initialized for {self.email_address}")
+            logger.info(f"Gmail service initialized for {credentials.account}")
         except Exception as e:
             raise AuthenticationError(f"Failed to initialize Gmail service: {e}")
-
-    def _get_credentials(self) -> Credentials:
-        """
-        Get OAuth2 credentials, with automatic token refresh.
-
-        Returns:
-            Valid OAuth2 credentials
-        """
-        try:
-            # Load credentials from file first
-            credentials_data = self._load_credentials_from_file()
-
-            # Get client credentials from file
-            client_id = credentials_data.get('client_id')
-            client_secret = credentials_data.get('client_secret')
-            token_uri = credentials_data.get('token_uri') or 'https://oauth2.googleapis.com/token'
-
-            # Try to use provided access tokens with refresh token
-            if self.refresh_token:
-                credentials = Credentials(
-                    token=self.access_token,
-                    refresh_token=self.refresh_token,
-                    client_id=client_id,
-                    client_secret=client_secret,
-                    token_uri=token_uri
-                )
-
-                # Check if token is expired and refresh if needed
-                if credentials.expired and credentials.refresh_token:
-                    logger.info("Access token expired, refreshing...")
-                    credentials.refresh(Request())
-
-                    # Save refreshed credentials if file path provided
-                    if self.credentials_file:
-                        self._save_credentials(credentials)
-
-                    # Update access token if refreshed
-                    if credentials.token != self.access_token:
-                        logger.info("Gmail token refreshed successfully")
-                        self.access_token = credentials.token
-            else:
-                credentials = Credentials(token=self.access_token)
-
-            return credentials
-        except Exception as e:
-            raise AuthenticationError(f"Failed to get credentials: {e}")
-
-    def _save_credentials(self, credentials: Credentials):
-        """
-        Save credentials to a YAML file for persistence.
-
-        Args:
-            credentials: Credentials object to save
-        """
-        try:
-            credentials_data = {
-                'token': credentials.token,
-                'refresh_token': credentials.refresh_token,
-                'token_uri': credentials.token_uri,
-                'client_id': credentials.client_id,
-                'client_secret': credentials.client_secret,
-                'scopes': credentials.scopes,
-                'expiry': credentials.expiry.isoformat() if credentials.expiry else None
-            }
-
-            # Save to file
-            with open(self.credentials_file, 'w') as f:
-                yaml.dump(credentials_data, f, default_flow_style=False)
-
-            logger.info(f"Credentials saved to {self.credentials_file}")
-        except Exception as e:
-            logger.warning(f"Failed to save credentials: {e}")
-
-    def _load_credentials_from_file(self) -> Optional[Dict]:
-        """
-        Load credentials from YAML file.
-
-        Returns:
-            Credentials dict or None if file doesn't exist
-        """
-        try:
-            if not self.credentials_file or not os.path.exists(self.credentials_file):
-                return None
-
-            with open(self.credentials_file, 'r') as f:
-                credentials_data = yaml.safe_load(f)
-
-            return credentials_data
-        except Exception as e:
-            logger.warning(f"Failed to load credentials from file: {e}")
-            return None
 
     def search_emails(
         self,
@@ -567,11 +435,6 @@ class GmailChecker:
         except Exception as e:
             logger.error(f"Failed to validate attachment type: {e}")
             return False
-
-
-class CredentialError(Exception):
-    """Raised when credentials are missing or invalid."""
-    pass
 
 
 class AuthenticationError(Exception):
