@@ -191,7 +191,7 @@ def load_activities(extract_dir: str = "tmp_extract") -> list[Dict[str, Any]]:
                     start_date = datetime.strptime(start_date_str, "%d %b %Y, %H:%M:%S").isoformat()
 
                 activity = {
-                    "id": row.get("Identyfikator aktywności", ""),
+                    "id": int(row.get("Identyfikator aktywności", "")),
                     "start_date": start_date,
                     "type": row.get("Rodzaj aktywności", ""),
                     "name": row.get("Nazwa aktywności", ""),
@@ -202,6 +202,8 @@ def load_activities(extract_dir: str = "tmp_extract") -> list[Dict[str, Any]]:
                     "max_speed": float(row.get("Maksymalna prędkość", 0)) if row.get("Maksymalna prędkość") else 0.0,
                 }
                 activities.append(activity)
+
+        activities = sorted(activities, key=lambda a: a.get('start_date', ''))
 
         print(f"[Success] Loaded {len(activities)} activities")
         return activities
@@ -286,7 +288,7 @@ def run_analyze_extract():
                 updated_rows = append_activities(
                     spreadsheet_id,
                     activities,
-                    sheet_name="Sheet1",
+                    sheet_name="Michal",
                     column_definition=column_definition,
                     column_labels=column_labels,
                 )
