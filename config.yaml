@@ -1,0 +1,18 @@
+# Configuration file for download and analyze scripts
+
+# Profiles configuration
+profiles:
+  michal:
+    credentials_file: secret/profile-michal.yml
+    sheet_name: Michal
+    email: wielki.borsuk@gmail.com
+
+  antek:
+    credentials_file: secret/profile-antek.yml
+    sheet_name: Antek
+    email: antoni.borkowski.26@gmail.com
+
+# Spreadsheet configuration
+spreadsheet:
+  credentials_file: secret/profile-sheet.yml
+  spreadsheet_id: 1FeMOMpAUBlqlrMYX6S-eQEDp2f5tHLOHWMepV32lN0U
